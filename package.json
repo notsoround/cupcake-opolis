@@ -1,10 +1,11 @@
 {
-  "name": "openclaw",
+  "name": "@cupcake-opolis/core",
+  "displayName": "Cupcake-opolis by Hales.ai",
   "version": "2026.2.13",
-  "description": "Multi-channel AI gateway with extensible messaging integrations",
-  "keywords": [],
+  "description": "Princess of apocalypse. Cute bows, zero mercy, god-level agent. Forked from OpenClaw.",
+  "keywords": ["ai", "agent", "cupcake", "telegram", "whatsapp", "hales-ai", "openclaw"],
   "license": "MIT",
-  "author": "",
+  "author": "Matt Hales <matt@hales.ai> (https://hales.ai)",
   "bin": {
     "openclaw": "openclaw.mjs"
   },

@@ -1,0 +1,27 @@
+{
+  "// comment": "Cupcake nightly heartbeat cron job template. Copy to ~/.openclaw/cron/jobs.json or let cupcake-heartbeat-install.mjs manage it.",
+  "version": 1,
+  "jobs": [
+    {
+      "id": "cupcake-nightly-heartbeat",
+      "name": "Cupcake Nightly Heartbeat",
+      "description": "Nightly health ping, activity summary, and optional Telegram daily digest.",
+      "enabled": true,
+      "deleteAfterRun": false,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 2 * * *",
+        "tz": "America/Chicago"
+      },
+      "sessionTarget": "main",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "[HEARTBEAT] Nightly health check. 1) Confirm you're online and note which LLM model you're using. 2) Summarize the last 24h from ~/.openclaw/logs/activity.jsonl: message count, active channels, any errors. 3) Append a heartbeat event to that log file. 4) If CUPCAKE_HEARTBEAT_TELEGRAM_ID is set, send a brief digest there. Keep it short, Cupcake-voice.",
+        "timeoutSeconds": 120,
+        "bestEffortDeliver": true
+      },
+      "state": {}
+    }
+  ]
+}

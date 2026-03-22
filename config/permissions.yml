@@ -1,0 +1,176 @@
+# Cupcake Permission Scoping Configuration
+# ────────────────────────────────────────────────────────────────────────────
+# Defines which channels, users, and roles are allowed to invoke specific
+# tools or capabilities. Checked before every tool execution.
+#
+# Structure:
+#   roles:         Named permission sets (reusable)
+#   channels:      Per-channel overrides (matched by channel ID or name)
+#   users:         Per-user overrides (matched by user_id)
+#   defaults:      Fallback rules when no channel/user match
+#
+# Permission values:
+#   allow          — permitted
+#   deny           — blocked, returns error message
+#   ask            — require explicit confirmation before proceeding
+#
+# Tool categories:
+#   file_read      — read files from disk
+#   file_write     — write/modify files on disk
+#   file_delete    — delete files
+#   shell_exec     — run arbitrary shell commands
+#   http_fetch     — make outbound HTTP requests
+#   code_exec      — execute code (Python, JS, etc.)
+#   memory_read    — read from persistent memory/context store
+#   memory_write   — write to persistent memory/context store
+#   web_search     — perform web searches
+#   image_gen      — generate images
+#   task_delegate  — enqueue background tasks
+#   bot_config     — modify bot configuration
+#   secrets_access — access environment secrets/tokens
+#   all            — wildcard: matches any tool
+#
+# ─── Roles ────────────────────────────────────────────────────────────────────
+
+roles:
+  owner:
+    # Full unrestricted access — only Matt
+    tools:
+      all: allow
+
+  trusted:
+    # Trusted users: read + search + tasks, no shell or config changes
+    tools:
+      file_read: allow
+      file_write: allow
+      file_delete: ask
+      shell_exec: deny
+      http_fetch: allow
+      code_exec: ask
+      memory_read: allow
+      memory_write: allow
+      web_search: allow
+      image_gen: allow
+      task_delegate: allow
+      bot_config: deny
+      secrets_access: deny
+
+  readonly:
+    # Read-only access: no mutations
+    tools:
+      file_read: allow
+      file_write: deny
+      file_delete: deny
+      shell_exec: deny
+      http_fetch: allow
+      code_exec: deny
+      memory_read: allow
+      memory_write: deny
+      web_search: allow
+      image_gen: deny
+      task_delegate: deny
+      bot_config: deny
+      secrets_access: deny
+
+  restricted:
+    # Minimal: web search and read only
+    tools:
+      file_read: deny
+      file_write: deny
+      file_delete: deny
+      shell_exec: deny
+      http_fetch: allow
+      code_exec: deny
+      memory_read: deny
+      memory_write: deny
+      web_search: allow
+      image_gen: deny
+      task_delegate: deny
+      bot_config: deny
+      secrets_access: deny
+
+# ─── Users ────────────────────────────────────────────────────────────────────
+
+users:
+  # Matt (owner) — full access
+  - id: "${CUPCAKE_OWNER_USER_ID}"
+    role: owner
+    note: "Bot owner — unrestricted"
+
+# ─── Channels ─────────────────────────────────────────────────────────────────
+
+channels:
+  # Private Telegram channel (personal use) — owner-level
+  - id: "${CUPCAKE_PRIVATE_TELEGRAM_CHANNEL}"
+    role: owner
+    note: "Personal channel — full access"
+
+  # Group/shared channels — trusted level
+  - id: "default_group"
+    role: trusted
+    # Channel-specific overrides on top of the role
+    overrides:
+      shell_exec: deny    # never exec in groups even if role permits
+      bot_config: deny
+
+  # Public/unknown channels — restricted
+  - id: "*"
+    role: readonly
+    overrides:
+      http_fetch: deny    # no outbound requests from unknown channels
+
+# ─── Defaults ─────────────────────────────────────────────────────────────────
+
+defaults:
+  # Applied when no channel or user match is found
+  role: restricted
+  # Deny escalation attempts
+  overrides:
+    bot_config: deny
+    secrets_access: deny
+    shell_exec: deny
+
+# ─── Tool-level rate limits ───────────────────────────────────────────────────
+
+rate_limits:
+  # Max invocations per minute per session
+  web_search: 10
+  http_fetch: 30
+  code_exec: 5
+  image_gen: 5
+  task_delegate: 20
+  file_write: 50
+  shell_exec: 10
+
+# ─── Blocklist ────────────────────────────────────────────────────────────────
+
+blocklist:
+  # Shell commands that are always blocked regardless of permissions
+  shell_patterns:
+    - "rm -rf"
+    - ":(){ :|:& };:"   # fork bomb
+    - "dd if=/dev/"
+    - "mkfs"
+    - "> /dev/sda"
+    - "chmod 777"
+    - "chown root"
+    - "sudo"
+    - "su -"
+
+  # URL patterns blocked for http_fetch
+  url_patterns:
+    - "169.254.169.254"   # AWS metadata
+    - "metadata.google"   # GCP metadata
+    - "localhost"
+    - "127.0.0.1"
+    - "0.0.0.0"
+
+# ─── Audit ────────────────────────────────────────────────────────────────────
+
+audit:
+  # Log every permission check (allow + deny)
+  log_all: false
+  # Always log denials
+  log_denials: true
+  # Include tool args in denial log (may contain sensitive data)
+  include_args_in_log: false

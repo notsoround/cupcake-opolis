@@ -1,0 +1,54 @@
+{
+  "_comment": "Cupcake Thread Router Config. Copy to ~/.openclaw/thread-routing.json and fill in your Telegram chat IDs.",
+  "_howto": [
+    "1. Get your Telegram group chat_id: forward any message from the group to @userinfobot",
+    "2. For topic threads, open the thread and look at the URL: ?thread=<thread_id>",
+    "3. For user DMs, message @userinfobot to get your user_id",
+    "4. Each 'context' value is a namespace - messages in the same context share memory",
+    "5. Routes are matched most-specific first (chat_id+thread_id beats chat_id alone)"
+  ],
+  "routes": [
+    {
+      "match": {
+        "chat_id": -1001234567890,
+        "thread_id": 100
+      },
+      "context": "crm",
+      "label": "CRM Tasks",
+      "allowed_users": [
+        987654321
+      ]
+    },
+    {
+      "match": {
+        "chat_id": -1001234567890,
+        "thread_id": 200
+      },
+      "context": "kb",
+      "label": "Knowledge Base"
+    },
+    {
+      "match": {
+        "chat_id": -1001234567890,
+        "thread_id": 300
+      },
+      "context": "dev",
+      "label": "Dev / Engineering"
+    },
+    {
+      "match": {
+        "chat_id": -1001234567890
+      },
+      "context": "general",
+      "label": "General (fallback for this group)"
+    },
+    {
+      "match": {
+        "user_id": 987654321
+      },
+      "context": "matt-dm",
+      "label": "Matt's DM — personal context"
+    }
+  ],
+  "default_context": "main"
+}

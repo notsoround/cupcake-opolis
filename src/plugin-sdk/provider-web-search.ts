@@ -1,11 +1,21 @@
 // Public web-search registration helpers for provider plugins.
 
-import type {
+export type {
   WebSearchCredentialResolutionSource,
+  WebSearchProviderSetupContext,
   WebSearchProviderPlugin,
   WebSearchProviderToolDefinition,
+  WebSearchProviderToolExecutionContext,
 } from "../plugins/types.js";
-export { readNumberParam, readStringArrayParam, readStringParam } from "../agents/tools/common.js";
+export { readProviderEnvValue } from "../secrets/provider-credential-values.js";
+export {
+  jsonResult,
+  readNonNegativeIntegerParam,
+  readNumberParam,
+  readPositiveIntegerParam,
+  readStringArrayParam,
+  readToolStringParam as readStringParam,
+} from "../agents/tools/common.js";
 export { resolveCitationRedirectUrl } from "../agents/tools/web-search-citation-redirect.js";
 export {
   buildSearchCacheKey,
@@ -16,15 +26,17 @@ export {
   MAX_SEARCH_COUNT,
   normalizeFreshness,
   normalizeToIsoDate,
+  parseIsoDateRange,
+  parseWebSearchTimeFilters,
   readCachedSearchPayload,
   readConfiguredSecretString,
-  readProviderEnvValue,
   resolveSearchCacheTtlMs,
   resolveSearchCount,
   resolveSearchTimeoutSeconds,
   resolveSiteName,
   postTrustedWebToolsJson,
   throwWebSearchApiError,
+  withSelfHostedWebSearchEndpoint,
   withTrustedWebSearchEndpoint,
   writeCachedSearchPayload,
 } from "../agents/tools/web-search-provider-common.js";
@@ -39,7 +51,14 @@ export {
 } from "../agents/tools/web-search-provider-config.js";
 export type { SearchConfigRecord } from "../agents/tools/web-search-provider-common.js";
 export { resolveWebSearchProviderCredential } from "../agents/tools/web-search-provider-credentials.js";
-export { withTrustedWebToolsEndpoint } from "../agents/tools/web-guarded-fetch.js";
+export {
+  withSelfHostedWebToolsEndpoint,
+  withTrustedWebToolsEndpoint,
+} from "../agents/tools/web-guarded-fetch.js";
+export {
+  markdownToText,
+  truncateWebFetchText as truncateText,
+} from "../agents/tools/web-fetch-utils.js";
 export {
   DEFAULT_CACHE_TTL_MINUTES,
   DEFAULT_TIMEOUT_SECONDS,
@@ -47,32 +66,10 @@ export {
   readCache,
   readResponseText,
   resolveCacheTtlMs,
+  resolvePositiveTimeoutSeconds,
   resolveTimeoutSeconds,
   writeCache,
 } from "../agents/tools/web-shared.js";
 export { enablePluginInConfig } from "../plugins/enable.js";
 export { formatCliCommand } from "../cli/command-format.js";
 export { wrapWebContent } from "../security/external-content.js";
-export type {
-  WebSearchCredentialResolutionSource,
-  WebSearchProviderPlugin,
-  WebSearchProviderToolDefinition,
-};
-
-/**
- * @deprecated Implement provider-owned `createTool(...)` directly on the
- * returned WebSearchProviderPlugin instead of routing through core.
- */
-export function createPluginBackedWebSearchProvider(
-  provider: WebSearchProviderPlugin,
-): WebSearchProviderPlugin {
-  return {
-    ...provider,
-    createTool: () => {
-      throw new Error(
-        `createPluginBackedWebSearchProvider(${provider.id}) is no longer supported. ` +
-          "Define provider-owned createTool(...) directly in the extension's WebSearchProviderPlugin.",
-      );
-    },
-  };
-}

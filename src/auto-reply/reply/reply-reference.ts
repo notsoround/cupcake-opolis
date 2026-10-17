@@ -1,6 +1,9 @@
+import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { ReplyToMode } from "../../config/types.js";
 
-export type ReplyReferencePlanner = {
+type ReplyReferencePlanner = {
+  /** Returns the effective reply/thread id for the next send without updating state. */
+  peek(): string | undefined;
   /** Returns the effective reply/thread id for the next send and updates state. */
   use(): string | undefined;
   /** Mark that a reply was sent (needed when no reference is used). */
@@ -8,6 +11,10 @@ export type ReplyReferencePlanner = {
   /** Whether a reply has been sent in this flow. */
   hasReplied(): boolean;
 };
+
+export function isSingleUseReplyToMode(mode: ReplyToMode): boolean {
+  return mode === "first" || mode === "batched";
+}
 
 export function createReplyReferencePlanner(options: {
   replyToMode: ReplyToMode;
@@ -22,39 +29,32 @@ export function createReplyReferencePlanner(options: {
 }): ReplyReferencePlanner {
   let hasReplied = options.hasReplied ?? false;
   const allowReference = options.allowReference !== false;
-  const existingId = options.existingId?.trim();
-  const startId = options.startId?.trim();
+  const existingId = normalizeOptionalString(options.existingId);
+  const startId = normalizeOptionalString(options.startId);
 
-  const use = (): string | undefined => {
-    if (!allowReference) {
+  const resolve = (): string | undefined => {
+    if (
+      !allowReference ||
+      options.replyToMode === "off" ||
+      (isSingleUseReplyToMode(options.replyToMode) && hasReplied)
+    ) {
       return undefined;
     }
-    if (options.replyToMode === "off") {
-      return undefined;
-    }
-    const id = existingId ?? startId;
-    if (!id) {
-      return undefined;
-    }
-    if (options.replyToMode === "all") {
-      hasReplied = true;
-      return id;
-    }
-    // "first": only the first reply gets a reference.
-    if (!hasReplied) {
-      hasReplied = true;
-      return id;
-    }
-    return undefined;
-  };
-
-  const markSent = () => {
-    hasReplied = true;
+    return existingId ?? startId;
   };
 
   return {
-    use,
-    markSent,
+    peek: resolve,
+    use() {
+      const id = resolve();
+      if (id) {
+        hasReplied = true;
+      }
+      return id;
+    },
+    markSent() {
+      hasReplied = true;
+    },
     hasReplied: () => hasReplied,
   };
 }

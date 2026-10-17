@@ -19,10 +19,10 @@
  */
 
 import fs from "node:fs/promises";
-import path from "node:path";
 import os from "node:os";
-import { createSubsystemLogger } from "../logging/subsystem.js";
+import path from "node:path";
 import { emitActivity } from "../logging/activity-log.js";
+import { createSubsystemLogger } from "../logging/subsystem.js";
 
 const log = createSubsystemLogger("cupcake/permission-check");
 
@@ -30,11 +30,19 @@ const log = createSubsystemLogger("cupcake/permission-check");
 
 export type ToolPermission = "allow" | "deny" | "ask";
 export type ToolCategory =
-  | "file_read" | "file_write" | "file_delete"
-  | "shell_exec" | "http_fetch" | "code_exec"
-  | "memory_read" | "memory_write"
-  | "web_search" | "image_gen"
-  | "task_delegate" | "bot_config" | "secrets_access"
+  | "file_read"
+  | "file_write"
+  | "file_delete"
+  | "shell_exec"
+  | "http_fetch"
+  | "code_exec"
+  | "memory_read"
+  | "memory_write"
+  | "web_search"
+  | "image_gen"
+  | "task_delegate"
+  | "bot_config"
+  | "secrets_access"
   | "all";
 
 export type RoleDefinition = {
@@ -101,9 +109,7 @@ const CONFIG_TTL_MS = 30_000;
 function resolveConfigPath(): string {
   const envPath = process.env.CUPCAKE_PERMISSIONS_CONFIG?.trim();
   if (envPath) {
-    return envPath.startsWith("~")
-      ? path.join(os.homedir(), envPath.slice(1))
-      : envPath;
+    return envPath.startsWith("~") ? path.join(os.homedir(), envPath.slice(1)) : envPath;
   }
   return path.join(process.cwd(), "config", "permissions.yml");
 }
@@ -124,7 +130,10 @@ async function loadConfig(): Promise<PermissionsConfig> {
     log.debug("Loaded permissions config", { path: configPath });
     return config;
   } catch (err) {
-    log.warn("Could not load permissions config — using safe defaults", { path: configPath, err: String(err) });
+    log.warn("Could not load permissions config — using safe defaults", {
+      path: configPath,
+      err: String(err),
+    });
     return getDefaultConfig();
   }
 }
@@ -135,10 +144,19 @@ function getDefaultConfig(): PermissionsConfig {
       owner: { tools: { all: "allow" } },
       restricted: {
         tools: {
-          file_read: "deny", file_write: "deny", file_delete: "deny",
-          shell_exec: "deny", http_fetch: "allow", code_exec: "deny",
-          memory_read: "deny", memory_write: "deny", web_search: "allow",
-          image_gen: "deny", task_delegate: "deny", bot_config: "deny", secrets_access: "deny",
+          file_read: "deny",
+          file_write: "deny",
+          file_delete: "deny",
+          shell_exec: "deny",
+          http_fetch: "allow",
+          code_exec: "deny",
+          memory_read: "deny",
+          memory_write: "deny",
+          web_search: "allow",
+          image_gen: "deny",
+          task_delegate: "deny",
+          bot_config: "deny",
+          secrets_access: "deny",
         },
       },
     },
@@ -176,7 +194,7 @@ function parseSimpleYaml(yaml: string): PermissionsConfig {
     if (!line.trim() || line.trim().startsWith("#")) continue;
 
     const topKeyMatch = line.match(/^([a-z_]+):\s*$/);
-    if (topKeyMatch) {
+    if (topKeyMatch?.[1]) {
       commitBlock();
       currentTopKey = topKeyMatch[1];
       currentBlock = [];
@@ -184,7 +202,7 @@ function parseSimpleYaml(yaml: string): PermissionsConfig {
     }
 
     const topValueMatch = line.match(/^([a-z_]+):\s+(.+)$/);
-    if (topValueMatch && !line.startsWith(" ")) {
+    if (topValueMatch?.[1] && topValueMatch[2] && !line.startsWith(" ")) {
       commitBlock();
       currentTopKey = "";
       currentBlock = [];
@@ -231,7 +249,7 @@ function parseObject(lines: string[]): Record<string, unknown> {
     if (!line.trim() || line.trim().startsWith("#")) continue;
 
     const keyOnlyMatch = line.match(/^ {2}([a-z_]+):\s*$/);
-    if (keyOnlyMatch) {
+    if (keyOnlyMatch?.[1]) {
       commitSub();
       currentKey = keyOnlyMatch[1];
       obj[currentKey] = {};
@@ -239,7 +257,7 @@ function parseObject(lines: string[]): Record<string, unknown> {
     }
 
     const keyValueMatch = line.match(/^ {2}([a-z_]+):\s+(.+)$/);
-    if (keyValueMatch) {
+    if (keyValueMatch?.[1] && keyValueMatch[2]) {
       commitSub();
       obj[keyValueMatch[1]] = parseScalar(keyValueMatch[2]);
       currentKey = "";
@@ -292,31 +310,26 @@ function parseScalar(value: string): string | number | boolean {
 
 // ─── Permission resolution ────────────────────────────────────────────────────
 
-function resolvePermission(
-  config: PermissionsConfig,
-  ctx: PermissionCheckContext
-): ToolPermission {
+function resolvePermission(config: PermissionsConfig, ctx: PermissionCheckContext): ToolPermission {
   const toolCat = ctx.toolCategory;
 
   function getFromRole(roleName: string): ToolPermission | null {
     const role = config.roles?.[roleName];
     if (!role) return null;
-    return (role.tools[toolCat] ?? role.tools["all"]) ?? null;
+    return role.tools[toolCat] ?? role.tools["all"] ?? null;
   }
 
   function mergePermission(
     base: ToolPermission | null,
-    overrides?: Partial<Record<ToolCategory, ToolPermission>>
+    overrides?: Partial<Record<ToolCategory, ToolPermission>>,
   ): ToolPermission | null {
     if (!overrides) return base;
-    return (overrides[toolCat] ?? overrides["all"]) ?? base;
+    return overrides[toolCat] ?? overrides["all"] ?? base;
   }
 
   // ─── 1. User-level lookup ─────────────────────────────────────────────────
   if (ctx.userId && config.users) {
-    const userConfig = config.users.find(
-      (u) => u.id === ctx.userId || u.id === "*"
-    );
+    const userConfig = config.users.find((u) => u.id === ctx.userId || u.id === "*");
     if (userConfig) {
       const rolePerm = userConfig.role ? getFromRole(userConfig.role) : null;
       const perm = mergePermission(rolePerm, userConfig.overrides);
@@ -382,10 +395,7 @@ function checkBlocklist(config: PermissionsConfig, ctx: PermissionCheckContext):
 
 const rateLimitCounters = new Map<string, { count: number; windowStart: number }>();
 
-function checkRateLimit(
-  config: PermissionsConfig,
-  ctx: PermissionCheckContext
-): string | null {
+function checkRateLimit(config: PermissionsConfig, ctx: PermissionCheckContext): string | null {
   const limits = config.rate_limits;
   if (!limits) return null;
 
@@ -508,19 +518,54 @@ export async function checkPermission(ctx: PermissionCheckContext): Promise<Perm
 export function categorizeTooll(toolName: string): ToolCategory {
   const tool = toolName.toLowerCase();
 
-  if (tool.includes("read_file") || tool.includes("file_read") || tool.includes("glob") || tool.includes("grep")) return "file_read";
-  if (tool.includes("write") || tool.includes("edit") || tool.includes("create")) return "file_write";
-  if (tool.includes("delete") || tool.includes("remove") || tool.includes("rm")) return "file_delete";
-  if (tool.includes("bash") || tool.includes("shell") || tool.includes("exec") || tool.includes("run")) return "shell_exec";
-  if (tool.includes("fetch") || tool.includes("http") || tool.includes("request") || tool.includes("url")) return "http_fetch";
-  if (tool.includes("python") || tool.includes("code_exec") || tool.includes("notebook")) return "code_exec";
-  if (tool.includes("memory") && (tool.includes("get") || tool.includes("read"))) return "memory_read";
-  if (tool.includes("memory") && (tool.includes("set") || tool.includes("write") || tool.includes("store"))) return "memory_write";
+  if (
+    tool.includes("read_file") ||
+    tool.includes("file_read") ||
+    tool.includes("glob") ||
+    tool.includes("grep")
+  )
+    return "file_read";
+  if (tool.includes("write") || tool.includes("edit") || tool.includes("create"))
+    return "file_write";
+  if (tool.includes("delete") || tool.includes("remove") || tool.includes("rm"))
+    return "file_delete";
+  if (
+    tool.includes("bash") ||
+    tool.includes("shell") ||
+    tool.includes("exec") ||
+    tool.includes("run")
+  )
+    return "shell_exec";
+  if (
+    tool.includes("fetch") ||
+    tool.includes("http") ||
+    tool.includes("request") ||
+    tool.includes("url")
+  )
+    return "http_fetch";
+  if (tool.includes("python") || tool.includes("code_exec") || tool.includes("notebook"))
+    return "code_exec";
+  if (tool.includes("memory") && (tool.includes("get") || tool.includes("read")))
+    return "memory_read";
+  if (
+    tool.includes("memory") &&
+    (tool.includes("set") || tool.includes("write") || tool.includes("store"))
+  )
+    return "memory_write";
   if (tool.includes("search") || tool.includes("web_search")) return "web_search";
-  if (tool.includes("image") || tool.includes("dalle") || tool.includes("gen_image")) return "image_gen";
-  if (tool.includes("task") || tool.includes("delegate") || tool.includes("enqueue")) return "task_delegate";
-  if (tool.includes("config") || tool.includes("settings") || tool.includes("bot_config")) return "bot_config";
-  if (tool.includes("secret") || tool.includes("token") || tool.includes("key") || tool.includes("credential")) return "secrets_access";
+  if (tool.includes("image") || tool.includes("dalle") || tool.includes("gen_image"))
+    return "image_gen";
+  if (tool.includes("task") || tool.includes("delegate") || tool.includes("enqueue"))
+    return "task_delegate";
+  if (tool.includes("config") || tool.includes("settings") || tool.includes("bot_config"))
+    return "bot_config";
+  if (
+    tool.includes("secret") ||
+    tool.includes("token") ||
+    tool.includes("key") ||
+    tool.includes("credential")
+  )
+    return "secrets_access";
 
   return "all"; // unknown → catch-all
 }
@@ -538,11 +583,11 @@ export function categorizeTooll(toolName: string): ToolCategory {
  */
 export function withPermissionCheck(
   executor: (toolName: string, toolArgs: unknown) => Promise<unknown>,
-  context: { userId?: string; channelId?: string; sessionId?: string }
+  context: { userId?: string; channelId?: string; sessionId?: string },
 ) {
   return async function permissionGuardedExecutor(
     toolName: string,
-    toolArgs: unknown
+    toolArgs: unknown,
   ): Promise<unknown> {
     const toolCategory = categorizeTooll(toolName);
     const result = await checkPermission({
@@ -572,9 +617,19 @@ export async function getPermissionSummary(ctx: {
 }): Promise<Record<ToolCategory, ToolPermission>> {
   const config = await loadConfig();
   const categories: ToolCategory[] = [
-    "file_read", "file_write", "file_delete", "shell_exec", "http_fetch",
-    "code_exec", "memory_read", "memory_write", "web_search", "image_gen",
-    "task_delegate", "bot_config", "secrets_access",
+    "file_read",
+    "file_write",
+    "file_delete",
+    "shell_exec",
+    "http_fetch",
+    "code_exec",
+    "memory_read",
+    "memory_write",
+    "web_search",
+    "image_gen",
+    "task_delegate",
+    "bot_config",
+    "secrets_access",
   ];
 
   const summary: Partial<Record<ToolCategory, ToolPermission>> = {};

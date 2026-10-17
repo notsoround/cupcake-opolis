@@ -1,78 +1,64 @@
-import type { EventEmitter } from "node:events";
+import { toErrorObject } from "openclaw/plugin-sdk/error-runtime";
+import type { DiscordGatewayHandle } from "./monitor/gateway-handle.js";
+import { DiscordGatewayLifecycleError } from "./monitor/gateway-supervisor.js";
+import type {
+  DiscordGatewayEvent,
+  DiscordGatewaySupervisor,
+} from "./monitor/gateway-supervisor.js";
 
-export type DiscordGatewayHandle = {
-  emitter?: Pick<EventEmitter, "on" | "removeListener">;
-  disconnect?: () => void;
-};
+export { getDiscordGatewayEmitter } from "./monitor/gateway-supervisor.js";
 
-export type WaitForDiscordGatewayStopParams = {
+type WaitForDiscordGatewayStopParams = {
   gateway?: DiscordGatewayHandle;
   abortSignal?: AbortSignal;
-  onGatewayError?: (err: unknown) => void;
-  shouldStopOnError?: (err: unknown) => boolean;
+  gatewaySupervisor?: Pick<DiscordGatewaySupervisor, "attachLifecycle" | "detachLifecycle">;
+  onGatewayEvent?: (event: DiscordGatewayEvent) => "continue" | "stop";
   registerForceStop?: (forceStop: (err: unknown) => void) => void;
 };
-
-export function getDiscordGatewayEmitter(gateway?: unknown): EventEmitter | undefined {
-  return (gateway as { emitter?: EventEmitter } | undefined)?.emitter;
-}
 
 export async function waitForDiscordGatewayStop(
   params: WaitForDiscordGatewayStopParams,
 ): Promise<void> {
-  const { gateway, abortSignal, onGatewayError, shouldStopOnError } = params;
-  const emitter = gateway?.emitter;
+  const { gateway, abortSignal } = params;
   return await new Promise<void>((resolve, reject) => {
     let settled = false;
     const cleanup = () => {
       abortSignal?.removeEventListener("abort", onAbort);
-      emitter?.removeListener("error", onGatewayErrorEvent);
+      params.gatewaySupervisor?.detachLifecycle();
     };
-    const finishResolve = () => {
+    const finish = (settle: () => void) => {
       if (settled) {
         return;
       }
       settled = true;
-      cleanup();
       try {
         gateway?.disconnect?.();
       } finally {
-        resolve();
+        // remove listeners after disconnect so late "error" events emitted
+        // during disconnect are still handled instead of becoming uncaught
+        cleanup();
+        settle();
       }
     };
     const finishReject = (err: unknown) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      cleanup();
-      try {
-        gateway?.disconnect?.();
-      } finally {
-        reject(err);
-      }
+      finish(() => reject(toErrorObject(err, "Non-Error rejection")));
     };
     const onAbort = () => {
-      finishResolve();
+      finish(resolve);
     };
-    const onGatewayErrorEvent = (err: unknown) => {
-      onGatewayError?.(err);
-      const shouldStop = shouldStopOnError?.(err) ?? true;
+    const onGatewayEvent = (event: DiscordGatewayEvent) => {
+      const shouldStop = (params.onGatewayEvent?.(event) ?? "stop") === "stop";
       if (shouldStop) {
-        finishReject(err);
+        finishReject(new DiscordGatewayLifecycleError(event));
       }
     };
-    const onForceStop = (err: unknown) => {
-      finishReject(err);
-    };
-
     if (abortSignal?.aborted) {
       onAbort();
       return;
     }
 
     abortSignal?.addEventListener("abort", onAbort, { once: true });
-    emitter?.on("error", onGatewayErrorEvent);
-    params.registerForceStop?.(onForceStop);
+    params.gatewaySupervisor?.attachLifecycle(onGatewayEvent);
+    params.registerForceStop?.(finishReject);
   });
 }

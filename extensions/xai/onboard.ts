@@ -1,36 +1,83 @@
 import {
-  applyProviderConfigWithDefaultModelsPreset,
+  applyAgentDefaultModelPrimary,
+  applyOnboardAuthAgentModelsAndProviders,
+  createModelCatalogPresetAppliers,
+  resolveAgentModelPrimaryValue,
+  withAgentModelAliases,
+  type ModelProviderConfig,
   type OpenClawConfig,
 } from "openclaw/plugin-sdk/provider-onboard";
-import { XAI_BASE_URL, XAI_DEFAULT_MODEL_ID } from "./model-definitions.js";
-import { buildXaiCatalogModels } from "./model-definitions.js";
+import {
+  buildXaiCatalogModels,
+  isLegacyXaiBuiltinModel,
+  XAI_BASE_URL,
+  XAI_DEFAULT_MODEL_ID,
+} from "./model-definitions.js";
 
 export const XAI_DEFAULT_MODEL_REF = `xai/${XAI_DEFAULT_MODEL_ID}`;
 
-function applyXaiProviderConfigWithApi(
-  cfg: OpenClawConfig,
-  api: "openai-completions" | "openai-responses",
-  primaryModelRef?: string,
-): OpenClawConfig {
-  return applyProviderConfigWithDefaultModelsPreset(cfg, {
+const xaiPresetAppliers = createModelCatalogPresetAppliers({
+  primaryModelRef: XAI_DEFAULT_MODEL_REF,
+  resolveParams: (cfg) => ({
     providerId: "xai",
-    api,
+    api: "openai-responses",
     baseUrl: XAI_BASE_URL,
-    defaultModels: buildXaiCatalogModels(),
-    defaultModelId: XAI_DEFAULT_MODEL_ID,
+    catalogModels: cfg.models?.mode === "replace" ? buildXaiCatalogModels() : [],
     aliases: [{ modelRef: XAI_DEFAULT_MODEL_REF, alias: "Grok" }],
-    primaryModelRef,
-  });
+  }),
+});
+
+function pruneRetiredXaiBuiltinModels(cfg: OpenClawConfig): OpenClawConfig {
+  const provider = cfg.models?.providers?.xai;
+  if (!provider || !Array.isArray(provider.models)) {
+    return cfg;
+  }
+  const models = provider.models.filter((model) => !isLegacyXaiBuiltinModel(model));
+  if (models.length === provider.models.length) {
+    return cfg;
+  }
+  return {
+    ...cfg,
+    models: {
+      ...cfg.models,
+      providers: {
+        ...cfg.models?.providers,
+        xai: {
+          ...provider,
+          models,
+        },
+      },
+    },
+  };
 }
 
 export function applyXaiProviderConfig(cfg: OpenClawConfig): OpenClawConfig {
-  return applyXaiProviderConfigWithApi(cfg, "openai-completions");
-}
-
-export function applyXaiResponsesApiConfig(cfg: OpenClawConfig): OpenClawConfig {
-  return applyXaiProviderConfigWithApi(cfg, "openai-responses");
+  return xaiPresetAppliers.applyProviderConfig(pruneRetiredXaiBuiltinModels(cfg));
 }
 
 export function applyXaiConfig(cfg: OpenClawConfig): OpenClawConfig {
-  return applyXaiProviderConfigWithApi(cfg, "openai-completions", XAI_DEFAULT_MODEL_REF);
+  return xaiPresetAppliers.applyConfig(pruneRetiredXaiBuiltinModels(cfg));
+}
+
+export function applyXaiOAuthConfig(
+  cfg: OpenClawConfig,
+  provider: ModelProviderConfig,
+): OpenClawConfig {
+  const next = applyOnboardAuthAgentModelsAndProviders(cfg, {
+    agentModels: withAgentModelAliases(cfg.agents?.defaults?.models, [
+      { modelRef: XAI_DEFAULT_MODEL_REF, alias: "Grok" },
+    ]),
+    providers: {
+      xai: {
+        ...provider,
+        apiKey: undefined,
+        authHeader: undefined,
+        headers: undefined,
+        request: { auth: undefined, headers: undefined },
+      },
+    },
+  });
+  return resolveAgentModelPrimaryValue(cfg.agents?.defaults?.model)
+    ? next
+    : applyAgentDefaultModelPrimary(next, XAI_DEFAULT_MODEL_REF);
 }

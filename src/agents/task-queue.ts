@@ -20,23 +20,14 @@
  *   CUPCAKE_TASK_QUEUE_TIMEOUT_MS=300000  — task timeout in ms (default: 5 minutes)
  */
 
-import fs from "node:fs/promises";
-import path from "node:path";
-import os from "node:os";
-import { createSubsystemLogger } from "../logging/subsystem.js";
 import { emitActivity } from "../logging/activity-log.js";
+import { createSubsystemLogger } from "../logging/subsystem.js";
 
 const log = createSubsystemLogger("cupcake/task-queue");
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type TaskStatus =
-  | "queued"
-  | "running"
-  | "completed"
-  | "failed"
-  | "timeout"
-  | "cancelled";
+export type TaskStatus = "queued" | "running" | "completed" | "failed" | "timeout" | "cancelled";
 
 export type TaskPriority = "low" | "normal" | "high";
 
@@ -109,8 +100,12 @@ async function defaultTaskRunner(task: BackgroundTask): Promise<string> {
     let stdout = "";
     let stderr = "";
 
-    child.stdout?.on("data", (d: Buffer) => { stdout += d.toString(); });
-    child.stderr?.on("data", (d: Buffer) => { stderr += d.toString(); });
+    child.stdout?.on("data", (d: Buffer) => {
+      stdout += d.toString();
+    });
+    child.stderr?.on("data", (d: Buffer) => {
+      stderr += d.toString();
+    });
 
     child.stdin?.write(task.prompt);
     child.stdin?.end();
@@ -138,7 +133,11 @@ async function defaultTaskRunner(task: BackgroundTask): Promise<string> {
 
 // ─── Notification delivery ────────────────────────────────────────────────────
 
-type NotifyFn = (task: BackgroundTask, result: string | null, error: string | null) => Promise<void>;
+type NotifyFn = (
+  task: BackgroundTask,
+  result: string | null,
+  error: string | null,
+) => Promise<void>;
 
 let notifyFn: NotifyFn | null = null;
 
@@ -186,8 +185,12 @@ class TaskQueueImpl {
     this.maxConcurrent = parseInt(process.env.CUPCAKE_TASK_QUEUE_MAX_CONCURRENT ?? "3", 10);
   }
 
-  get size(): number { return this.queue.length; }
-  get activeCount(): number { return this.running.size; }
+  get size(): number {
+    return this.queue.length;
+  }
+  get activeCount(): number {
+    return this.running.size;
+  }
 
   async enqueue(opts: TaskEnqueueOptions): Promise<string> {
     const id = `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -216,13 +219,17 @@ class TaskQueueImpl {
       meta: { taskId: id, priority: task.priority, estimatedSeconds: task.estimatedSeconds },
     });
 
-    log.info("Task enqueued", { taskId: id, description: opts.description, queueSize: this.queue.length });
+    log.info("Task enqueued", {
+      taskId: id,
+      description: opts.description,
+      queueSize: this.queue.length,
+    });
     this.processNext();
     return id;
   }
 
   cancel(taskId: string): boolean {
-    const idx = this.queue.findIndex(t => t.id === taskId);
+    const idx = this.queue.findIndex((t) => t.id === taskId);
     if (idx !== -1) {
       this.queue[idx]!.status = "cancelled";
       this.queue.splice(idx, 1);
@@ -235,8 +242,8 @@ class TaskQueueImpl {
   getStatus(taskId: string): BackgroundTask | null {
     return (
       this.running.get(taskId) ??
-      this.queue.find(t => t.id === taskId) ??
-      this.completed.find(t => t.id === taskId) ??
+      this.queue.find((t) => t.id === taskId) ??
+      this.completed.find((t) => t.id === taskId) ??
       null
     );
   }
@@ -301,7 +308,11 @@ class TaskQueueImpl {
       const errorMsg = err instanceof Error ? err.message : String(err);
 
       if (task.attempts < task.maxAttempts) {
-        log.warn("Task failed, will retry", { taskId: task.id, error: errorMsg, attempt: task.attempts });
+        log.warn("Task failed, will retry", {
+          taskId: task.id,
+          error: errorMsg,
+          attempt: task.attempts,
+        });
         task.status = "queued";
         this.running.delete(task.id);
         this.queue.unshift(task); // retry at front of queue
@@ -309,7 +320,8 @@ class TaskQueueImpl {
         return;
       }
 
-      task.status = err instanceof Error && err.message.includes("timed out") ? "timeout" : "failed";
+      task.status =
+        err instanceof Error && err.message.includes("timed out") ? "timeout" : "failed";
       task.error = errorMsg;
       task.completedAtMs = Date.now();
 
@@ -344,10 +356,7 @@ export const taskQueue = new TaskQueueImpl();
  * Heuristics to decide if a task should be backgrounded.
  * Returns true if the task should be delegated to the queue.
  */
-export function shouldDelegate(opts: {
-  message: string;
-  estimatedSeconds?: number;
-}): boolean {
+export function shouldDelegate(opts: { message: string; estimatedSeconds?: number }): boolean {
   const { message, estimatedSeconds } = opts;
 
   // Explicit threshold
@@ -355,12 +364,26 @@ export function shouldDelegate(opts: {
 
   // Keyword heuristics for long-running operations
   const longRunningKeywords = [
-    "research", "analyze all", "scan all", "audit", "generate report",
-    "read every", "process all", "summarize all", "extract from all",
-    "batch", "crawl", "scrape", "download all", "convert all",
-    "comprehensive", "thorough", "in-depth", "deep dive",
+    "research",
+    "analyze all",
+    "scan all",
+    "audit",
+    "generate report",
+    "read every",
+    "process all",
+    "summarize all",
+    "extract from all",
+    "batch",
+    "crawl",
+    "scrape",
+    "download all",
+    "convert all",
+    "comprehensive",
+    "thorough",
+    "in-depth",
+    "deep dive",
   ];
 
   const lowerMsg = message.toLowerCase();
-  return longRunningKeywords.some(kw => lowerMsg.includes(kw));
+  return longRunningKeywords.some((kw) => lowerMsg.includes(kw));
 }

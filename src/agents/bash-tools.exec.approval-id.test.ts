@@ -1,9 +1,28 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { clearConfigCache } from "../config/config.js";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { createRequireRecord } from "../../test/helpers/record.js";
+import { saveExecApprovals } from "../infra/exec-approvals-store.test-support.js";
+import {
+  loadExecApprovals,
+  type ExecApprovalsFile,
+  type ExecApprovalsAgent,
+} from "../infra/exec-approvals.js";
+import { sendMessage } from "../infra/outbound/message.js";
+import type { SpawnInput } from "../process/supervisor/types.js";
+import { createDeferredCore } from "../shared/deferred.js";
+import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
+import { captureEnv, deleteTestEnvValue, setTestEnvValue } from "../test-utils/env.js";
 import { buildSystemRunPreparePayload } from "../test-utils/system-run-prepare-payload.js";
+import { createExecTool as createExecToolImpl } from "./bash-tools.exec-run.js";
+import { callGatewayTool } from "./tools/gateway.js";
+
+const createExecTool = (
+  defaults?: Parameters<typeof createExecToolImpl>[0],
+): ReturnType<typeof createExecToolImpl> =>
+  createExecToolImpl({ agentId: "main", approvalRunningNoticeMs: 0, ...defaults });
 
 vi.mock("./tools/gateway.js", () => ({
   callGatewayTool: vi.fn(),
@@ -12,755 +31,794 @@ vi.mock("./tools/gateway.js", () => ({
 
 vi.mock("./tools/nodes-utils.js", () => ({
   listNodes: vi.fn(async () => [
-    { nodeId: "node-1", commands: ["system.run"], platform: "darwin" },
+    {
+      nodeId: "node-1",
+      commands: ["system.run", "system.run.prepare"],
+      connected: true,
+      platform: "darwin",
+    },
   ]),
   resolveNodeIdFromList: vi.fn((nodes: Array<{ nodeId: string }>) => nodes[0]?.nodeId),
 }));
 
-vi.mock("../infra/exec-obfuscation-detect.js", () => ({
-  detectCommandObfuscation: vi.fn(() => ({
-    detected: false,
-    reasons: [],
-    matchedPatterns: [],
-  })),
+vi.mock("../infra/outbound/message.js", () => ({
+  sendMessage: vi.fn(async () => ({ ok: true })),
 }));
 
-let callGatewayTool: typeof import("./tools/gateway.js").callGatewayTool;
-let createExecTool: typeof import("./bash-tools.exec.js").createExecTool;
-let detectCommandObfuscation: typeof import("../infra/exec-obfuscation-detect.js").detectCommandObfuscation;
+vi.mock("../utils/message-channel.js", () => {
+  const INTERNAL_MESSAGE_CHANNEL = "webchat";
+  const normalizeMessageChannel = (raw?: string | null) => {
+    const normalized = raw?.trim().toLowerCase();
+    if (!normalized) {
+      return undefined;
+    }
+    if (normalized === "web") {
+      return INTERNAL_MESSAGE_CHANNEL;
+    }
+    return normalized;
+  };
+  const isGatewayMessageChannel = (value: string) => Boolean(normalizeMessageChannel(value));
+  return {
+    INTERNAL_MESSAGE_CHANNEL,
+    isDeliverableMessageChannel: (value: string) => {
+      const channel = normalizeMessageChannel(value);
+      return Boolean(channel && channel !== INTERNAL_MESSAGE_CHANNEL && channel !== "tui");
+    },
+    isGatewayMessageChannel,
+    normalizeMessageChannel,
+    resolveGatewayMessageChannel: normalizeMessageChannel,
+    resolveMessageChannel: (primary?: string | null, fallback?: string | null) =>
+      normalizeMessageChannel(primary) ?? normalizeMessageChannel(fallback),
+  };
+});
+
+vi.mock("../utils/delivery-context.shared.js", () => ({
+  normalizeDeliveryContext: (context?: {
+    channel?: string | null;
+    to?: string | number | null;
+    accountId?: string | null;
+    threadId?: string | number | null;
+  }) => {
+    if (!context) {
+      return undefined;
+    }
+    const channel = context.channel?.trim().toLowerCase();
+    const to = context.to == null ? undefined : String(context.to).trim();
+    const accountId = context.accountId?.trim();
+    const threadId = context.threadId == null ? undefined : context.threadId;
+    if (!channel && !to && !accountId && threadId == null) {
+      return undefined;
+    }
+    return {
+      channel: channel || undefined,
+      to: to || undefined,
+      accountId: accountId || undefined,
+      ...(threadId != null && threadId !== "" ? { threadId } : {}),
+    };
+  },
+}));
+
+vi.mock("../infra/exec-approval-surface.js", () => ({
+  describeNativeExecApprovalClientSetup: () => null,
+  listNativeExecApprovalClientLabels: () => [],
+  resolveExecApprovalInitiatingSurfaceState: (params: {
+    channel?: string | null;
+    accountId?: string | null;
+  }) => {
+    const channel = params.channel ?? undefined;
+    return {
+      kind: "enabled",
+      channel,
+      channelLabel:
+        channel === "tui" ? "terminal UI" : channel === "webchat" ? "Web UI" : "this platform",
+      accountId: params.accountId ?? undefined,
+    };
+  },
+  supportsNativeExecApprovalClient: (channel?: string | null) =>
+    !channel || channel === "webchat" || channel === "tui",
+}));
+
+vi.mock("../infra/shell-env.js", () => ({
+  getShellPathFromLoginShell: vi.fn(() => null),
+  resolveShellEnvFallbackTimeoutMs: vi.fn(() => 0),
+}));
+
+vi.mock("../process/supervisor/index.js", async () => {
+  const { createProcessSupervisor } = await import("../process/supervisor/supervisor.js");
+  const nativeSupervisor = createProcessSupervisor();
+  afterAll(() => nativeSupervisor.shutdown());
+  const stdoutFor = (command: string) => {
+    if (command.includes("gog-wrapper")) {
+      return '{"events":[]}\n';
+    }
+    if (command.includes("echo cron-ok")) {
+      return "cron-ok\n";
+    }
+    if (command.includes("echo ok")) {
+      return "ok\n";
+    }
+    return "";
+  };
+  return {
+    getProcessSupervisor: () => ({
+      spawn: async (input: SpawnInput) => {
+        const command = "argv" in input ? input.argv.join(" ") : "";
+        const inlineOutput = ["delayed-ok", "approval-one", "approval-two", "allow-always"].find(
+          (value) => command.includes(value),
+        );
+        // Let the real POSIX shell handle executable quoting; Windows keeps the routing fixture.
+        if (inlineOutput && process.platform !== "win32") {
+          return nativeSupervisor.spawn(input);
+        }
+        const stdout = inlineOutput ?? stdoutFor(command);
+        if (stdout) {
+          input.onStdout?.(stdout);
+        }
+        return {
+          activity: { resultSettled: true, lastOutputAtMs: Date.now() },
+          runId: "mock-approval-run",
+          startedAtMs: Date.now(),
+          stdin: undefined,
+          wait: async () => ({
+            reason: "exit" as const,
+            exitCode: 0,
+            exitSignal: null,
+            durationMs: 0,
+            stdout: "",
+            stderr: "",
+            timedOut: false,
+            noOutputTimedOut: false,
+          }),
+          cancel: vi.fn(),
+        };
+      },
+      cancel: vi.fn(),
+      cancelScope: vi.fn(),
+    }),
+  };
+});
 
 function buildPreparedSystemRunPayload(rawInvokeParams: unknown) {
-  const invoke = (rawInvokeParams ?? {}) as {
-    params?: {
-      command?: unknown;
-      rawCommand?: unknown;
-      cwd?: unknown;
-      agentId?: unknown;
-      sessionKey?: unknown;
-    };
+  const invoke = requireRecord(rawInvokeParams ?? {}, "prepare invoke");
+  return buildSystemRunPreparePayload(requireRecord(invoke.params ?? {}, "prepare params"));
+}
+
+type GatewayHandlers = Record<string, (params: unknown) => unknown>;
+const requireRecord = createRequireRecord("record", "expected-label");
+const elevated = { enabled: true, allowed: true, defaultLevel: "ask" } as const;
+
+function policy(
+  defaults?: ExecApprovalsFile["defaults"],
+  allowlist?: ExecApprovalsAgent["allowlist"],
+): ExecApprovalsFile {
+  return { version: 1, defaults, agents: allowlist ? { main: { allowlist } } : {} };
+}
+
+function mockGateway(handlers: GatewayHandlers = {}) {
+  const calls: string[] = [];
+  vi.mocked(callGatewayTool).mockImplementation(async (method, _opts, params) => {
+    calls.push(method);
+    return handlers[method] ? await handlers[method](params) : { ok: true };
+  });
+  return calls;
+}
+
+function mockApproval(decision: string | null, handlers: GatewayHandlers = {}) {
+  return mockGateway({
+    "exec.approval.request": (params) => ({
+      status: "accepted",
+      id: requireRecord(params, "request").id,
+    }),
+    "exec.approval.waitDecision": () => ({ decision }),
+    ...handlers,
+  });
+}
+
+function prepareOnly(params: unknown) {
+  return requireRecord(params, "node invoke").command === "system.run.prepare"
+    ? buildPreparedSystemRunPayload(params)
+    : { ok: true };
+}
+
+function nodeFixture(stdout = "ok", prepare = buildPreparedSystemRunPayload) {
+  const runs: Record<string, unknown>[] = [];
+  return {
+    runs,
+    handle: (params: unknown) => {
+      const invoke = requireRecord(params, "node invoke");
+      if (invoke.command === "system.run.prepare") {
+        return prepare(params);
+      }
+      if (invoke.command === "system.run") {
+        runs.push(requireRecord(invoke.params, "system.run params"));
+        return { payload: { success: true, stdout } };
+      }
+      return { ok: true };
+    },
   };
-  const params = invoke.params ?? {};
-  return buildSystemRunPreparePayload(params);
-}
-
-function getTestConfigPath() {
-  return path.join(process.env.HOME ?? "", ".openclaw", "openclaw.json");
-}
-
-async function writeOpenClawConfig(config: Record<string, unknown>, pretty = false) {
-  const configPath = getTestConfigPath();
-  await fs.mkdir(path.dirname(configPath), { recursive: true });
-  await fs.writeFile(configPath, JSON.stringify(config, null, pretty ? 2 : undefined));
-}
-
-async function writeExecApprovalsConfig(config: Record<string, unknown>) {
-  const approvalsPath = path.join(process.env.HOME ?? "", ".openclaw", "exec-approvals.json");
-  await fs.mkdir(path.dirname(approvalsPath), { recursive: true });
-  await fs.writeFile(approvalsPath, JSON.stringify(config, null, 2));
-}
-
-function acceptedApprovalResponse(params: unknown) {
-  return { status: "accepted", id: (params as { id?: string })?.id };
 }
 
 function getResultText(result: { content: Array<{ type?: string; text?: string }> }) {
   return result.content.find((part) => part.type === "text")?.text ?? "";
 }
 
-function expectPendingApprovalText(
-  result: {
-    details: { status?: string };
-    content: Array<{ type?: string; text?: string }>;
-  },
-  options: {
-    command: string;
-    host: "gateway" | "node";
-    nodeId?: string;
-    interactive?: boolean;
-  },
-) {
-  expect(result.details.status).toBe("approval-pending");
-  const details = result.details as { approvalId: string; approvalSlug: string };
-  const pendingText = getResultText(result);
-  expect(pendingText).toContain(
-    `Reply with: /approve ${details.approvalSlug} allow-once|allow-always|deny`,
-  );
-  expect(pendingText).toContain(`full ${details.approvalId}`);
-  expect(pendingText).toContain(`Host: ${options.host}`);
-  if (options.nodeId) {
-    expect(pendingText).toContain(`Node: ${options.nodeId}`);
-  }
-  expect(pendingText).toContain(`CWD: ${process.cwd()}`);
-  expect(pendingText).toContain("Command:\n```sh\n");
-  expect(pendingText).toContain(options.command);
-  if (options.interactive) {
-    expect(pendingText).toContain("Mode: foreground (interactive approvals available).");
-    expect(pendingText).toContain("Background mode requires pre-approved policy");
-  }
-  return details;
+function gatewayParams(method: string) {
+  return vi
+    .mocked(callGatewayTool)
+    .mock.calls.filter(([name]) => name === method)
+    .map((call) => requireRecord(call[2], `${method} params`));
 }
 
-function expectPendingCommandText(
-  result: {
-    details: { status?: string };
-    content: Array<{ type?: string; text?: string }>;
-  },
-  command: string,
-) {
-  expect(result.details.status).toBe("approval-pending");
-  const text = getResultText(result);
-  expect(text).toContain("Command:\n```sh\n");
-  expect(text).toContain(command);
-}
-
-function mockGatewayOkCalls(calls: string[]) {
-  vi.mocked(callGatewayTool).mockImplementation(async (method) => {
-    calls.push(method);
-    return { ok: true };
+function expectAuthenticatedExecFollowup(record: Record<string, unknown>, sessionKey: string) {
+  expect(record.sessionKey).toBe(sessionKey);
+  expect(record.message).toEqual(expect.stringContaining("<<<BEGIN_UNTRUSTED_EXEC_OUTPUT>>>"));
+  expect(record.internalRuntimeHandoffId).toEqual(expect.any(String));
+  expect(String(record.idempotencyKey)).toMatch(/^exec-approval-followup:.+:nonce:/);
+  expect(record.inputProvenance).toEqual({
+    kind: "inter_session",
+    sourceSessionKey: sessionKey,
+    sourceTool: "exec_approval_followup",
   });
 }
 
-function createElevatedAllowlistExecTool() {
-  return createExecTool({
-    ask: "on-miss",
-    security: "allowlist",
-    approvalRunningNoticeMs: 0,
-    elevated: { enabled: true, allowed: true, defaultLevel: "ask" },
+function mockNoRoute(handlers: GatewayHandlers = {}) {
+  return mockApproval(null, {
+    "exec.approval.request": () => ({ id: "approval-id", decision: null }),
+    ...handlers,
   });
 }
 
-async function expectGatewayExecWithoutApproval(options: {
-  config: Record<string, unknown>;
-  command: string;
-  ask?: "always" | "on-miss" | "off";
-}) {
-  await writeExecApprovalsConfig(options.config);
-  const calls: string[] = [];
-  mockGatewayOkCalls(calls);
-
-  const tool = createExecTool({
-    host: "gateway",
-    ask: options.ask,
-    security: "full",
-    approvalRunningNoticeMs: 0,
-  });
-
-  const result = await tool.execute("call-no-approval", { command: options.command });
-  expect(result.details.status).toBe("completed");
-  expect(calls).not.toContain("exec.approval.request");
-  expect(calls).not.toContain("exec.approval.waitDecision");
-}
-
-function mockAcceptedApprovalFlow(options: {
-  onAgent?: (params: Record<string, unknown>) => void;
-  onNodeInvoke?: (params: unknown) => unknown;
-}) {
-  vi.mocked(callGatewayTool).mockImplementation(async (method, _opts, params) => {
-    if (method === "exec.approval.request") {
-      return acceptedApprovalResponse(params);
-    }
-    if (method === "exec.approval.waitDecision") {
-      return { decision: "allow-once" };
-    }
-    if (method === "agent" && options.onAgent) {
-      options.onAgent(params as Record<string, unknown>);
-      return { status: "ok" };
-    }
-    if (method === "node.invoke" && options.onNodeInvoke) {
-      return await options.onNodeInvoke(params);
-    }
-    return { ok: true };
-  });
-}
-
-function mockPendingApprovalRegistration() {
-  vi.mocked(callGatewayTool).mockImplementation(async (method) => {
-    if (method === "exec.approval.request") {
-      return { status: "accepted", id: "approval-id" };
-    }
-    if (method === "exec.approval.waitDecision") {
-      return { decision: null };
-    }
-    return { ok: true };
-  });
-}
-
-function expectApprovalUnavailableText(result: {
-  details: { status?: string };
-  content: Array<{ type?: string; text?: string }>;
-}) {
-  expect(result.details.status).toBe("approval-unavailable");
-  const text = result.content.find((part) => part.type === "text")?.text ?? "";
-  expect(text).not.toContain("/approve");
-  expect(text).not.toContain("npm view diver name version description");
-  expect(text).not.toContain("Pending command:");
-  expect(text).not.toContain("Host:");
-  expect(text).not.toContain("CWD:");
-  return text;
+function expectCronDelivery(host: "gateway" | "node") {
+  const [request] = gatewayParams("exec.approval.request");
+  expect(request?.suppressDelivery).toBe(host === "node" ? true : undefined);
+  expect(request?.deliverToApprovalClientsOnly).toBe(host === "gateway" ? true : undefined);
 }
 
 describe("exec approvals", () => {
-  let previousHome: string | undefined;
-  let previousUserProfile: string | undefined;
+  let envSnapshot: ReturnType<typeof captureEnv> | undefined;
+  let tempRoot = "";
+  let tempCaseIndex = 0;
 
   beforeAll(async () => {
-    ({ callGatewayTool } = await import("./tools/gateway.js"));
-    ({ createExecTool } = await import("./bash-tools.exec.js"));
-    ({ detectCommandObfuscation } = await import("../infra/exec-obfuscation-detect.js"));
+    // Detached assertions exercise delivery, not cold loading of the recovery graph.
+    await import("./bash-tools.exec-approval-followup.js");
+    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-exec-approvals-"));
   });
 
   beforeEach(async () => {
-    previousHome = process.env.HOME;
-    previousUserProfile = process.env.USERPROFILE;
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-test-"));
-    process.env.HOME = tempDir;
-    // Windows uses USERPROFILE for os.homedir()
-    process.env.USERPROFILE = tempDir;
+    envSnapshot = captureEnv([
+      "HOME",
+      "USERPROFILE",
+      "OPENCLAW_STATE_DIR",
+      "OPENCLAW_BUNDLED_PLUGINS_DIR",
+      "OPENCLAW_DISABLE_BUNDLED_PLUGINS",
+    ]);
+    const tempDir = path.join(tempRoot, `case-${++tempCaseIndex}`);
+    await fs.mkdir(tempDir, { recursive: true });
+    setTestEnvValue("HOME", tempDir);
+    setTestEnvValue("USERPROFILE", tempDir);
+    setTestEnvValue("OPENCLAW_STATE_DIR", path.join(tempDir, ".openclaw"));
+    deleteTestEnvValue("OPENCLAW_BUNDLED_PLUGINS_DIR");
+    setTestEnvValue("OPENCLAW_DISABLE_BUNDLED_PLUGINS", "1");
+    vi.mocked(callGatewayTool).mockReset();
+    vi.mocked(sendMessage).mockClear();
   });
 
   afterEach(() => {
-    vi.resetAllMocks();
-    clearConfigCache();
-    if (previousHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = previousHome;
-    }
-    if (previousUserProfile === undefined) {
-      delete process.env.USERPROFILE;
-    } else {
-      process.env.USERPROFILE = previousUserProfile;
+    vi.clearAllMocks();
+    closeOpenClawStateDatabaseForTest();
+    envSnapshot?.restore();
+    envSnapshot = undefined;
+  });
+
+  afterAll(async () => {
+    if (tempRoot) {
+      await fs.rm(tempRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
     }
   });
 
-  it("reuses approval id as the node runId", async () => {
-    let invokeParams: unknown;
-    let agentParams: unknown;
-
-    mockAcceptedApprovalFlow({
-      onAgent: (params) => {
-        agentParams = params;
-      },
-      onNodeInvoke: (params) => {
-        const invoke = params as { command?: string };
-        if (invoke.command === "system.run.prepare") {
-          return buildPreparedSystemRunPayload(params);
-        }
-        if (invoke.command === "system.run") {
-          invokeParams = params;
-          return { payload: { success: true, stdout: "ok" } };
-        }
+  it("reuses approval id as the node runId for an explicit agent follow-up", async () => {
+    const node = nodeFixture();
+    const followup = createDeferredCore<Record<string, unknown>>();
+    mockApproval("allow-once", {
+      "node.invoke": node.handle,
+      agent: (params) => {
+        followup.resolve(requireRecord(params, "agent"));
+        return { status: "ok" };
       },
     });
-
     const tool = createExecTool({
       host: "node",
       ask: "always",
-      approvalRunningNoticeMs: 0,
+      approvalFollowupMode: "agent",
       sessionKey: "agent:main:main",
     });
-
     const result = await tool.execute("call1", { command: "ls -la" });
-    const details = expectPendingApprovalText(result, {
-      command: "ls -la",
-      host: "node",
-      nodeId: "node-1",
-      interactive: true,
-    });
-    const approvalId = details.approvalId;
-
-    await expect
-      .poll(() => (invokeParams as { params?: { runId?: string } } | undefined)?.params?.runId, {
-        timeout: 2000,
-        interval: 20,
-      })
-      .toBe(approvalId);
-    expect(
-      (invokeParams as { params?: { suppressNotifyOnExit?: boolean } } | undefined)?.params,
-    ).toMatchObject({
-      suppressNotifyOnExit: true,
-    });
-    await expect.poll(() => agentParams, { timeout: 2_000, interval: 20 }).toBeTruthy();
+    const details = result.details;
+    if (details.status !== "approval-pending") {
+      throw new Error("Expected a pending approval");
+    }
+    const pendingText = getResultText(result);
+    expect(pendingText).toContain(`Reply with: /approve ${details.approvalSlug} allow-once|deny`);
+    expect(pendingText).toContain(`full ${details.approvalId}`);
+    expect(pendingText).toContain("Host: node");
+    expect(pendingText).toContain("Node: node-1");
+    expect(pendingText).toContain("CWD: (node default)");
+    expect(pendingText).toContain("Command:\n```sh\n");
+    expect(pendingText).toContain("ls -la");
+    expect(pendingText).toContain("Mode: foreground (interactive approvals available).");
+    expect(pendingText).not.toContain("Background mode");
+    const agent = await followup.promise;
+    const run = requireRecord(node.runs[0], "system.run params");
+    expect(run.runId).toBe(details.approvalId);
+    expect(Object.hasOwn(run, "cwd")).toBe(false);
+    expect(run.suppressNotifyOnExit).toBe(true);
+    expectAuthenticatedExecFollowup(agent, "agent:main:main");
+    expect(String(agent.idempotencyKey)).toContain(details.approvalId);
   });
 
   it("skips approval when node allowlist is satisfied", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-test-bin-"));
-    const binDir = path.join(tempDir, "bin");
-    await fs.mkdir(binDir, { recursive: true });
-    const exeName = process.platform === "win32" ? "tool.cmd" : "tool";
-    const exePath = path.join(binDir, exeName);
+    const binDir = path.join(tempRoot, `case-${tempCaseIndex}`, "bin");
+    await fs.mkdir(binDir);
+    const exePath = path.join(binDir, process.platform === "win32" ? "tool.cmd" : "tool");
     await fs.writeFile(exePath, "");
     if (process.platform !== "win32") {
       await fs.chmod(exePath, 0o755);
     }
-    const approvalsFile = {
-      version: 1,
-      defaults: { security: "allowlist", ask: "on-miss", askFallback: "deny" },
-      agents: {
-        main: {
-          allowlist: [{ pattern: exePath }],
-        },
-      },
-    };
-
-    const calls: string[] = [];
-    vi.mocked(callGatewayTool).mockImplementation(async (method, _opts, params) => {
-      calls.push(method);
-      if (method === "exec.approvals.node.get") {
-        return { file: approvalsFile };
-      }
-      if (method === "node.invoke") {
-        const invoke = params as { command?: string };
-        if (invoke.command === "system.run.prepare") {
-          return buildPreparedSystemRunPayload(params);
-        }
-        return { payload: { success: true, stdout: "ok" } };
-      }
-      // exec.approval.request should NOT be called when allowlist is satisfied
-      return { ok: true };
+    const node = nodeFixture();
+    const calls = mockGateway({
+      "node.invoke": node.handle,
+      "exec.approvals.node.get": () => ({
+        file: policy({ security: "allowlist", ask: "on-miss", askFallback: "deny" }, [
+          { pattern: exePath },
+        ]),
+      }),
     });
-
-    const tool = createExecTool({
-      host: "node",
-      ask: "on-miss",
-      approvalRunningNoticeMs: 0,
-    });
-
-    const result = await tool.execute("call2", {
-      command: `"${exePath}" --help`,
-    });
+    const tool = createExecTool({ host: "node", security: "allowlist", ask: "on-miss" });
+    const result = await tool.execute("call2", { command: `"${exePath}" --help` });
     expect(result.details.status).toBe("completed");
     expect(calls).toContain("exec.approvals.node.get");
     expect(calls).toContain("node.invoke");
     expect(calls).not.toContain("exec.approval.request");
   });
 
-  it("honors ask=off for elevated gateway exec without prompting", async () => {
-    const calls: string[] = [];
-    vi.mocked(callGatewayTool).mockImplementation(async (method) => {
-      calls.push(method);
-      return { ok: true };
+  it("preserves explicit workdir for node exec", async () => {
+    const node = nodeFixture();
+    mockGateway({ "node.invoke": node.handle });
+    const tool = createExecTool({ host: "node", ask: "off", security: "full" });
+    const result = await tool.execute("call-node-cwd", {
+      command: "/bin/pwd",
+      workdir: "/Users/vv",
     });
+    expect(result.details.status).toBe("completed");
+    expect(node.runs).toHaveLength(1);
+    const run = requireRecord(node.runs[0], "system.run params");
+    expect(Object.hasOwn(run, "cwd")).toBe(true);
+    expect(run.cwd).toBe("/Users/vv");
+  });
 
+  it("keeps the background fallback warning when node exec actually runs inline", async () => {
+    mockGateway({ "node.invoke": nodeFixture("node-ok").handle });
     const tool = createExecTool({
+      host: "node",
       ask: "off",
       security: "full",
-      approvalRunningNoticeMs: 0,
-      elevated: { enabled: true, allowed: true, defaultLevel: "ask" },
+      allowBackground: false,
     });
-
-    const result = await tool.execute("call3", { command: "echo ok", elevated: true });
+    const result = await tool.execute("call-node-background-disabled", {
+      command: "echo ok",
+      background: true,
+    });
     expect(result.details.status).toBe("completed");
-    expect(calls).not.toContain("exec.approval.request");
+    expect(getResultText(result)).toContain(
+      "Warning: continuation options are unavailable; running synchronously.",
+    );
+    expect(getResultText(result)).toContain("node-ok");
   });
 
-  it("uses exec-approvals ask=off to suppress gateway prompts", async () => {
-    await expectGatewayExecWithoutApproval({
-      config: {
-        version: 1,
-        defaults: { security: "full", ask: "off", askFallback: "full" },
-        agents: {
-          main: { security: "full", ask: "off", askFallback: "full" },
-        },
-      },
-      command: "echo ok",
-      ask: "on-miss",
-    });
-  });
-
-  it("inherits ask=off from exec-approvals defaults when tool ask is unset", async () => {
-    await expectGatewayExecWithoutApproval({
-      config: {
-        version: 1,
-        defaults: { security: "full", ask: "off", askFallback: "full" },
-        agents: {},
-      },
-      command: "echo ok",
-    });
-  });
-
-  it("requires approval for elevated ask when allowlist misses", async () => {
-    const calls: string[] = [];
-    let resolveApproval: (() => void) | undefined;
-    const approvalSeen = new Promise<void>((resolve) => {
-      resolveApproval = resolve;
-    });
-
-    vi.mocked(callGatewayTool).mockImplementation(async (method, _opts, params) => {
-      calls.push(method);
-      if (method === "exec.approval.request") {
-        resolveApproval?.();
-        // Return registration confirmation
-        return acceptedApprovalResponse(params);
+  it.each(["gateway", "node"] as const)(
+    "keeps ask=always prompts for %s runs with durable trust",
+    async (host) => {
+      const allowlist: ExecApprovalsAgent["allowlist"] = [
+        { pattern: process.execPath, source: "allow-always" },
+      ];
+      if (host === "gateway") {
+        saveExecApprovals(
+          policy({ security: "full", ask: "always", askFallback: "full" }, allowlist),
+        );
       }
-      if (method === "exec.approval.waitDecision") {
-        return { decision: "deny" };
+      const node = nodeFixture("node-ok");
+      mockGateway(
+        host === "gateway"
+          ? {
+              "exec.approval.request": () => ({ status: "accepted", id: "approval-id" }),
+              // Detached work must stay pending instead of racing the next policy fixture.
+              "exec.approval.waitDecision": () => new Promise<never>(() => {}),
+            }
+          : {
+              "node.invoke": node.handle,
+              "exec.approvals.node.get": () => ({ file: policy(undefined, allowlist) }),
+            },
+      );
+      const tool = createExecTool({
+        host,
+        ask: "always",
+        security: "full",
+        approvalFollowupMode: "agent",
+      });
+      const result = await tool.execute(`call-${host}-durable`, {
+        command: `${JSON.stringify(process.execPath)} --version`,
+      });
+      expect(result.details.status).toBe("approval-pending");
+      expect(requireRecord(result.details, "result details").allowedDecisions).toEqual([
+        "allow-once",
+        "deny",
+      ]);
+      expect(gatewayParams("exec.approval.request")).toHaveLength(1);
+      if (host === "gateway") {
+        expect(getResultText(result)).toContain("Reply with: /approve ");
+        expect(getResultText(result)).toContain("allow-once|deny");
+        expect(getResultText(result)).not.toContain("allow-once|allow-always|deny");
+        expect(getResultText(result)).toContain("Allow Always is unavailable");
       }
-      return { ok: true };
-    });
+    },
+  );
 
-    const tool = createElevatedAllowlistExecTool();
-
-    const result = await tool.execute("call4", { command: "echo ok", elevated: true });
-    expectPendingApprovalText(result, { command: "echo ok", host: "gateway" });
-    await approvalSeen;
+  it("reuses gateway allow-always approvals for repeated exact commands", async () => {
+    saveExecApprovals(policy({ security: "allowlist", ask: "on-miss", askFallback: "deny" }));
+    const calls = mockApproval("allow-always");
+    const tool = createExecTool({ host: "gateway", ask: "on-miss", security: "allowlist" });
+    const command = "echo allow-always";
+    const first = await tool.execute("call-gateway-allow-always-initial", { command });
+    expect(first.details.status).toBe("completed");
+    expect(getResultText(first)).toContain("allow-always");
     expect(calls).toContain("exec.approval.request");
     expect(calls).toContain("exec.approval.waitDecision");
+    expect(
+      loadExecApprovals().agents?.main?.allowlist?.some((entry) => entry.source === "allow-always"),
+    ).toBe(true);
+    calls.length = 0;
+    const second = await tool.execute("call-gateway-allow-always-repeat", { command });
+    expect(second.details.status).toBe("completed");
+    expect(getResultText(second)).toContain("allow-always");
+    expect(calls).not.toContain("exec.approval.request");
+    expect(calls).not.toContain("exec.approval.waitDecision");
   });
 
-  it("starts a direct agent follow-up after approved gateway exec completes", async () => {
-    const agentCalls: Array<Record<string, unknown>> = [];
-
-    mockAcceptedApprovalFlow({
-      onAgent: (params) => {
-        agentCalls.push(params);
-      },
+  it("reuses exact-command durable trust for node shell-wrapper reruns", async () => {
+    const prepared = buildPreparedSystemRunPayload({
+      params: { command: ["/bin/sh", "-lc", "cd ."], cwd: process.cwd() },
     });
+    const commandText = prepared.payload.plan.commandText;
+    const calls = mockGateway({
+      "exec.approvals.node.get": () => ({
+        file: policy(undefined, [
+          {
+            pattern: `=command:${crypto.createHash("sha256").update(commandText).digest("hex").slice(0, 16)}`,
+            source: "allow-always",
+          },
+        ]),
+      }),
+      "node.invoke": nodeFixture("node-shell-wrapper-ok").handle,
+    });
+    const tool = createExecTool({ host: "node", ask: "on-miss", security: "allowlist" });
+    const result = await tool.execute("call-node-shell-wrapper-durable-allow-always", {
+      command: "cd .",
+    });
+    expect(result.details.status).toBe("completed");
+    expect(getResultText(result)).toContain("node-shell-wrapper-ok");
+    expect(calls).not.toContain("exec.approval.request");
+    expect(calls).not.toContain("exec.approval.waitDecision");
+  });
 
+  it("keeps unavailable continuation guidance out of pending gateway approvals", async () => {
+    mockApproval("deny");
     const tool = createExecTool({
       host: "gateway",
       ask: "always",
-      approvalRunningNoticeMs: 0,
-      sessionKey: "agent:main:main",
-      elevated: { enabled: true, allowed: true, defaultLevel: "ask" },
+      security: "full",
+      allowBackground: false,
+      approvalFollowupMode: "agent",
     });
+    const result = await tool.execute("call-gateway-background-approval", {
+      command: "echo ok",
+      background: true,
+    });
+    expect(result.details.status).toBe("approval-pending");
+    expect(getResultText(result)).not.toMatch(/process|background|yieldMs|poll/i);
+    expect(gatewayParams("exec.approval.request")[0]?.warningText).toBeUndefined();
+  });
 
-    const result = await tool.execute("call-gw-followup", {
+  it("delivers an explicitly requested agent follow-up through the original external route", async () => {
+    const followup = createDeferredCore<Record<string, unknown>>();
+    mockApproval("allow-once", {
+      agent: (params) => {
+        followup.resolve(requireRecord(params, "agent"));
+        return { status: "ok" };
+      },
+    });
+    const tool = createExecTool({
+      host: "gateway",
+      ask: "always",
+      approvalFollowupMode: "agent",
+      sessionKey: "agent:main:feishu:channel:123",
+      elevated,
+      messageProvider: "feishu",
+      currentChannelId: "123",
+      accountId: "default",
+      currentThreadTs: "456",
+    });
+    const result = await tool.execute("call-gw-followup-feishu", {
       command: "echo ok",
       workdir: process.cwd(),
-      gatewayUrl: undefined,
-      gatewayToken: undefined,
     });
-
     expect(result.details.status).toBe("approval-pending");
-    await expect.poll(() => agentCalls.length, { timeout: 3_000, interval: 20 }).toBe(1);
-    expect(agentCalls[0]).toEqual(
-      expect.objectContaining({
-        sessionKey: "agent:main:main",
-        deliver: true,
-        idempotencyKey: expect.stringContaining("exec-approval-followup:"),
-      }),
-    );
-    expect(typeof agentCalls[0]?.message).toBe("string");
-    expect(agentCalls[0]?.message).toContain(
-      "An async command the user already approved has completed.",
-    );
+    const agent = await followup.promise;
+    expect(gatewayParams("agent")).toHaveLength(1);
+    expectAuthenticatedExecFollowup(agent, "agent:main:feishu:channel:123");
+    expect(agent).toMatchObject({
+      deliver: true,
+      bestEffortDeliver: true,
+      channel: "feishu",
+      to: "123",
+      accountId: "default",
+      threadId: "456",
+    });
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("waits inline for native Discord approval and resumes the same session without a second user turn", async () => {
+    const decision = createDeferredCore<{ decision: string }>();
+    mockApproval("allow-once", {
+      "exec.approval.waitDecision": () => decision.promise,
+      agent: () => ({ status: "ok" }),
+    });
+    const tool = createExecTool({
+      host: "gateway",
+      ask: "always",
+      sessionKey: "agent:main:discord:channel:123",
+      elevated,
+      messageProvider: "discord",
+      currentChannelId: "123",
+      accountId: "default",
+      currentThreadTs: "456",
+    });
+    let settled = false;
+    const resultPromise = tool.execute("call-gw-followup-discord-delayed", {
+      command: "printf delayed-ok",
+      workdir: process.cwd(),
+    });
+    void resultPromise.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(gatewayParams("agent")).toHaveLength(0);
+    decision.resolve({ decision: "allow-once" });
+    const result = await resultPromise;
+    expect(result.details.status).toBe("completed");
+    expect(getResultText(result)).toContain("delayed-ok");
+    expect(gatewayParams("agent")).toHaveLength(0);
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("routes denied approval status through an explicitly requested agent follow-up", async () => {
+    const followup = createDeferredCore<Record<string, unknown>>();
+    mockApproval("deny", {
+      agent: (params) => {
+        followup.resolve(requireRecord(params, "agent"));
+        return { status: "ok" };
+      },
+    });
+    const tool = createExecTool({
+      host: "gateway",
+      ask: "always",
+      approvalFollowupMode: "agent",
+      sessionKey: "agent:main:main",
+      elevated,
+    });
+    const result = await tool.execute("call-gw-followup-deny", {
+      command: "echo ok",
+      workdir: process.cwd(),
+    });
+    const details = result.details;
+    if (details.status !== "approval-pending") {
+      throw new Error("Expected a pending approval");
+    }
+    const approvalId = details.approvalId;
+    expect(approvalId).toBeTypeOf("string");
+    const agent = await followup.promise;
+    expect(gatewayParams("agent")).toHaveLength(1);
+    expect(agent).toMatchObject({
+      sessionKey: "agent:main:main",
+      deliver: false,
+      idempotencyKey: `exec-approval-followup:${approvalId}`,
+    });
+    expect(agent.message).toContain("An async command did not run.");
+    expect(agent.message).toContain(`Exec denied (gateway id=${approvalId}, user-denied): echo ok`);
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it("requires a separate approval for each elevated command after allow-once", async () => {
-    const requestCommands: string[] = [];
-    const requestIds: string[] = [];
-    const waitIds: string[] = [];
-
-    vi.mocked(callGatewayTool).mockImplementation(async (method, _opts, params) => {
-      if (method === "exec.approval.request") {
-        const request = params as { id?: string; command?: string };
-        if (typeof request.command === "string") {
-          requestCommands.push(request.command);
-        }
-        if (typeof request.id === "string") {
-          requestIds.push(request.id);
-        }
-        return acceptedApprovalResponse(request);
-      }
-      if (method === "exec.approval.waitDecision") {
-        const wait = params as { id?: string };
-        if (typeof wait.id === "string") {
-          waitIds.push(wait.id);
-        }
-        return { decision: "allow-once" };
-      }
-      return { ok: true };
-    });
-
-    const tool = createElevatedAllowlistExecTool();
-
+    mockApproval("allow-once");
+    const tool = createExecTool({ ask: "on-miss", security: "allowlist", elevated });
     const first = await tool.execute("call-seq-1", {
-      command: "npm view diver --json",
+      command: "printf approval-one",
       elevated: true,
     });
     const second = await tool.execute("call-seq-2", {
-      command: "brew outdated",
+      command: "printf approval-two",
       elevated: true,
     });
-
-    expect(first.details.status).toBe("approval-pending");
-    expect(second.details.status).toBe("approval-pending");
-    expect(requestCommands).toEqual(["npm view diver --json", "brew outdated"]);
-    expect(requestIds).toHaveLength(2);
-    expect(requestIds[0]).not.toBe(requestIds[1]);
-    expect(waitIds).toEqual(requestIds);
+    expect(first.details.status).toBe("completed");
+    expect(getResultText(first)).toContain("approval-one");
+    expect(second.details.status).toBe("completed");
+    expect(getResultText(second)).toContain("approval-two");
+    const requests = gatewayParams("exec.approval.request");
+    expect(requests.map((request) => request.command)).toEqual([
+      "printf approval-one",
+      "printf approval-two",
+    ]);
+    const ids = requests.map((request) => request.id);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).not.toBe(ids[1]);
+    expect(gatewayParams("exec.approval.waitDecision").map((request) => request.id)).toEqual(ids);
   });
 
-  it("shows full chained gateway commands in approval-pending message", async () => {
-    const calls: string[] = [];
-    vi.mocked(callGatewayTool).mockImplementation(async (method, _opts, params) => {
-      calls.push(method);
-      if (method === "exec.approval.request") {
-        return acceptedApprovalResponse(params);
-      }
-      if (method === "exec.approval.waitDecision") {
-        return { decision: "deny" };
-      }
-      return { ok: true };
+  it("runs a direct skill wrapper command without prompting when the wrapper is allowlisted", async () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    const binDir = path.join(tempRoot, `case-${tempCaseIndex}`, "bin");
+    const wrapperPath = path.join(binDir, "gog-wrapper");
+    await fs.mkdir(binDir);
+    await fs.writeFile(wrapperPath, "#!/bin/sh\necho '{\"events\":[]}'\n");
+    await fs.chmod(wrapperPath, 0o755);
+    saveExecApprovals(
+      policy({ security: "allowlist", ask: "off", askFallback: "deny" }, [
+        { pattern: await fs.realpath(wrapperPath) },
+      ]),
+    );
+    const calls = mockGateway();
+    const tool = createExecTool({ host: "gateway", ask: "off", security: "allowlist" });
+    const result = await tool.execute("call-skill-wrapper", {
+      command: `${JSON.stringify(wrapperPath)} calendar events primary --today --json`,
+      workdir: path.dirname(binDir),
     });
-
-    const tool = createExecTool({
-      host: "gateway",
-      ask: "on-miss",
-      security: "allowlist",
-      approvalRunningNoticeMs: 0,
-    });
-
-    const result = await tool.execute("call-chain-gateway", {
-      command: "npm view diver --json | jq .name && brew outdated",
-    });
-
-    expectPendingCommandText(result, "npm view diver --json | jq .name && brew outdated");
-    expect(calls).toContain("exec.approval.request");
+    expect(result.details.status).toBe("completed");
+    expect(getResultText(result)).toContain('{"events":[]}');
+    expect(calls).not.toContain("exec.approval.request");
   });
 
-  it("shows full chained node commands in approval-pending message", async () => {
-    const calls: string[] = [];
-    vi.mocked(callGatewayTool).mockImplementation(async (method, _opts, params) => {
-      calls.push(method);
-      if (method === "node.invoke") {
-        const invoke = params as { command?: string };
-        if (invoke.command === "system.run.prepare") {
-          return buildPreparedSystemRunPayload(params);
-        }
-      }
-      return { ok: true };
+  it("denies an allowlisted command with shell expansion without requesting approval", async () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    saveExecApprovals(
+      policy({ security: "allowlist", ask: "off", askFallback: "deny" }, [
+        { pattern: await fs.realpath(process.execPath) },
+      ]),
+    );
+    const calls = mockGateway();
+    const tool = createExecTool({ host: "gateway", ask: "off", security: "allowlist" });
+    const result = await tool.execute("call-shell-expansion-deny", {
+      command: `${JSON.stringify(process.execPath)} --version *.md`,
     });
-
-    const tool = createExecTool({
-      host: "node",
-      ask: "always",
-      security: "full",
-      approvalRunningNoticeMs: 0,
-    });
-
-    const result = await tool.execute("call-chain-node", {
-      command: "npm view diver --json | jq .name && brew outdated",
-    });
-
-    expectPendingCommandText(result, "npm view diver --json | jq .name && brew outdated");
-    expect(calls).toContain("exec.approval.request");
+    expect(result.details.status).toBe("failed");
+    expect(getResultText(result)).toContain("ask-fallback-deny: execution-plan-miss");
+    expect(calls).not.toContain("exec.approval.request");
+    expect(calls).not.toContain("exec.approval.waitDecision");
   });
 
   it("waits for approval registration before returning approval-pending", async () => {
-    const calls: string[] = [];
-    let resolveRegistration: ((value: unknown) => void) | undefined;
-    const registrationPromise = new Promise<unknown>((resolve) => {
-      resolveRegistration = resolve;
+    const registration = createDeferredCore<unknown>();
+    const calls = mockGateway({
+      "exec.approval.request": () => registration.promise,
+      "exec.approval.waitDecision": () => ({ decision: "deny" }),
     });
-
-    vi.mocked(callGatewayTool).mockImplementation(async (method, _opts, params) => {
-      calls.push(method);
-      if (method === "exec.approval.request") {
-        return await registrationPromise;
-      }
-      if (method === "exec.approval.waitDecision") {
-        return { decision: "deny" };
-      }
-      return { ok: true, id: (params as { id?: string })?.id };
-    });
-
     const tool = createExecTool({
       host: "gateway",
       ask: "on-miss",
       security: "allowlist",
-      approvalRunningNoticeMs: 0,
+      approvalFollowupMode: "agent",
     });
-
     let settled = false;
     const executePromise = tool.execute("call-registration-gate", { command: "echo register" });
     void executePromise.finally(() => {
       settled = true;
     });
-
     await Promise.resolve();
     await Promise.resolve();
     expect(settled).toBe(false);
-
-    resolveRegistration?.({ status: "accepted", id: "approval-id" });
+    registration.resolve({ status: "accepted", id: "approval-id" });
     const result = await executePromise;
     expect(result.details.status).toBe("approval-pending");
+    expect(gatewayParams("exec.approval.request")[0]?.suppressDelivery).toBeUndefined();
     expect(calls[0]).toBe("exec.approval.request");
     expect(calls).toContain("exec.approval.waitDecision");
   });
 
   it("fails fast when approval registration fails", async () => {
-    vi.mocked(callGatewayTool).mockImplementation(async (method) => {
-      if (method === "exec.approval.request") {
+    mockGateway({
+      "exec.approval.request": () => {
         throw new Error("gateway offline");
-      }
-      return { ok: true };
+      },
     });
-
-    const tool = createExecTool({
-      host: "gateway",
-      ask: "on-miss",
-      security: "allowlist",
-      approvalRunningNoticeMs: 0,
-    });
-
+    const tool = createExecTool({ host: "gateway", ask: "on-miss", security: "allowlist" });
     await expect(tool.execute("call-registration-fail", { command: "echo fail" })).rejects.toThrow(
       "Exec approval registration failed",
     );
   });
 
-  it("returns an unavailable approval message instead of a local /approve prompt when discord exec approvals are disabled", async () => {
-    await writeOpenClawConfig({
-      channels: {
-        discord: {
-          enabled: true,
-          execApprovals: { enabled: false },
-        },
-      },
-    });
-
-    mockPendingApprovalRegistration();
-
+  it("resolves cron no-route approvals inline when askFallback permits trusted automation", async () => {
+    saveExecApprovals(policy({ security: "full", ask: "always", askFallback: "full" }));
+    const calls = mockNoRoute();
     const tool = createExecTool({
       host: "gateway",
       ask: "always",
-      approvalRunningNoticeMs: 0,
-      messageProvider: "discord",
-      accountId: "default",
-      currentChannelId: "1234567890",
-    });
-
-    const result = await tool.execute("call-unavailable", {
-      command: "npm view diver name version description",
-    });
-
-    const text = expectApprovalUnavailableText(result);
-    expect(text).toContain("chat exec approvals are not enabled on Discord");
-    expect(text).toContain("Web UI or terminal UI");
-  });
-
-  it("tells Telegram users that allowed approvers were DMed when Telegram approvals are disabled but Discord DM approvals are enabled", async () => {
-    await writeOpenClawConfig(
-      {
-        channels: {
-          telegram: {
-            enabled: true,
-            execApprovals: { enabled: false },
-          },
-          discord: {
-            enabled: true,
-            execApprovals: { enabled: true, approvers: ["123"], target: "dm" },
-          },
-        },
-      },
-      true,
-    );
-
-    mockPendingApprovalRegistration();
-
-    const tool = createExecTool({
-      host: "gateway",
-      ask: "always",
-      approvalRunningNoticeMs: 0,
-      messageProvider: "telegram",
-      accountId: "default",
-      currentChannelId: "-1003841603622",
-    });
-
-    const result = await tool.execute("call-tg-unavailable", {
-      command: "npm view diver name version description",
-    });
-
-    const text = expectApprovalUnavailableText(result);
-    expect(text).toContain("Approval required. I sent the allowed approvers DMs.");
-  });
-
-  it("denies node obfuscated command when approval request times out", async () => {
-    vi.mocked(detectCommandObfuscation).mockReturnValue({
-      detected: true,
-      reasons: ["Content piped directly to shell interpreter"],
-      matchedPatterns: ["pipe-to-shell"],
-    });
-
-    const calls: string[] = [];
-    const nodeInvokeCommands: string[] = [];
-    vi.mocked(callGatewayTool).mockImplementation(async (method, _opts, params) => {
-      calls.push(method);
-      if (method === "exec.approval.request") {
-        return { status: "accepted", id: "approval-id" };
-      }
-      if (method === "exec.approval.waitDecision") {
-        return {};
-      }
-      if (method === "node.invoke") {
-        const invoke = params as { command?: string };
-        if (invoke.command) {
-          nodeInvokeCommands.push(invoke.command);
-        }
-        if (invoke.command === "system.run.prepare") {
-          return buildPreparedSystemRunPayload(params);
-        }
-        return { payload: { success: true, stdout: "should-not-run" } };
-      }
-      return { ok: true };
-    });
-
-    const tool = createExecTool({
-      host: "node",
-      ask: "off",
       security: "full",
-      approvalRunningNoticeMs: 0,
+      trigger: "cron",
     });
-
-    const result = await tool.execute("call5", { command: "echo hi | sh" });
-    expect(result.details.status).toBe("approval-pending");
-    await expect.poll(() => nodeInvokeCommands.includes("system.run")).toBe(false);
+    const result = await tool.execute("call-cron-inline-approval", { command: "echo cron-ok" });
+    expect(result.details.status).toBe("completed");
+    expect(getResultText(result)).toContain("cron-ok");
+    const request = vi
+      .mocked(callGatewayTool)
+      .mock.calls.find(([method]) => method === "exec.approval.request");
+    expect(requireRecord(request?.[3], "request options").expectFinal).toBe(false);
+    expectCronDelivery("gateway");
+    expect(calls).not.toContain("exec.approval.waitDecision");
   });
 
-  it("denies gateway obfuscated command when approval request times out", async () => {
-    if (process.platform === "win32") {
-      return;
-    }
-
-    vi.mocked(detectCommandObfuscation).mockReturnValue({
-      detected: true,
-      reasons: ["Content piped directly to shell interpreter"],
-      matchedPatterns: ["pipe-to-shell"],
+  it("forwards inline cron approval state to node system.run", async () => {
+    saveExecApprovals(policy({ security: "full", ask: "always", askFallback: "full" }));
+    const preparedPlan = {
+      argv: ["/bin/sh", "-lc", "echo cron-node-ok"],
+      cwd: null,
+      commandText: "/bin/sh -lc 'echo cron-node-ok'",
+      commandPreview: "echo cron-node-ok",
+      agentId: null,
+      sessionKey: null,
+      mutableFileOperand: { argvIndex: 2, path: "/tmp/cron-node-ok.sh", sha256: "deadbeef" },
+    };
+    const node = nodeFixture("cron-node-ok", () => ({ payload: { plan: preparedPlan } }));
+    mockNoRoute({ "node.invoke": node.handle });
+    const tool = createExecTool({ host: "node", ask: "always", security: "full", trigger: "cron" });
+    const result = await tool.execute("call-cron-inline-node-approval", {
+      command: "echo cron-node-ok",
     });
-
-    vi.mocked(callGatewayTool).mockImplementation(async (method) => {
-      if (method === "exec.approval.request") {
-        return { status: "accepted", id: "approval-id" };
-      }
-      if (method === "exec.approval.waitDecision") {
-        return {};
-      }
-      return { ok: true };
-    });
-
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-test-obf-"));
-    const markerPath = path.join(tempDir, "ran.txt");
-    const tool = createExecTool({
-      host: "gateway",
-      ask: "off",
-      security: "full",
-      approvalRunningNoticeMs: 0,
-    });
-
-    const result = await tool.execute("call6", {
-      command: `echo touch ${JSON.stringify(markerPath)} | sh`,
-    });
-    expect(result.details.status).toBe("approval-pending");
-    await expect
-      .poll(async () => {
-        try {
-          await fs.access(markerPath);
-          return true;
-        } catch {
-          return false;
-        }
-      })
-      .toBe(false);
+    expect(result.details.status).toBe("completed");
+    expect(getResultText(result)).toContain("cron-node-ok");
+    expectCronDelivery("node");
+    const params = requireRecord(node.runs[0], "system.run params");
+    expect(params.approved).toBeUndefined();
+    expect(params.approvalDecision).toBeUndefined();
+    expect(params.approvalSource).toBe("ask-fallback");
+    expect(params.systemRunPlan).toStrictEqual(preparedPlan);
+    expect(params.runId).toBeTypeOf("string");
   });
+
+  it.each(["gateway", "node"] as const)(
+    "denies %s cron no-route approvals when askFallback is deny",
+    async (host) => {
+      saveExecApprovals(policy({ security: "full", ask: "always", askFallback: "deny" }));
+      mockNoRoute(
+        host === "node"
+          ? {
+              "node.invoke": prepareOnly,
+            }
+          : {},
+      );
+      const tool = createExecTool({ host, ask: "always", security: "full", trigger: "cron" });
+      await expect(
+        tool.execute(`call-cron-${host}-denied`, { command: `echo cron-${host}-denied` }),
+      ).rejects.toThrow("Automation runs cannot wait for interactive exec approval");
+      expectCronDelivery(host);
+      if (host === "node") {
+        expect(gatewayParams("node.invoke").some((invoke) => invoke.command === "system.run")).toBe(
+          false,
+        );
+      }
+    },
+  );
 });

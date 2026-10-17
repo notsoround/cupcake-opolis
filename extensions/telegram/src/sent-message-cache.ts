@@ -1,77 +1,188 @@
-import { resolveGlobalMap } from "openclaw/plugin-sdk/text-runtime";
+import { createHash } from "node:crypto";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
+import { resolveGlobalSingleton } from "openclaw/plugin-sdk/global-singleton";
+import type { PluginStateKeyedStore } from "openclaw/plugin-sdk/plugin-state-runtime";
+import { logVerbose } from "openclaw/plugin-sdk/runtime-env";
+import { resolveStorePath } from "openclaw/plugin-sdk/session-store-paths";
+import { resolveTelegramAccountOwnerAgentId } from "./account-owner.js";
+import { getTelegramRuntime } from "./runtime.js";
 
-/**
- * In-memory cache of sent message IDs per chat.
- * Used to identify bot's own messages for reaction filtering ("own" mode).
- */
+const TTL_MS = 24 * 60 * 60 * 1000;
+const TELEGRAM_SENT_MESSAGE_CACHE_NAMESPACE = "telegram.sent-messages";
+const TELEGRAM_SENT_MESSAGE_CACHE_MAX_ENTRIES = 10_000;
+const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+const TELEGRAM_SENT_MESSAGES_STATE_KEY = Symbol.for("openclaw.telegramSentMessagesState");
 
-const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-type CacheEntry = {
-  timestamps: Map<number, number>;
+type PersistedSentMessage = {
+  scopeKey: string;
+  chatId: string;
+  messageId: string;
+  timestamp: number;
 };
 
-/**
- * Keep sent-message tracking shared across bundled chunks so Telegram reaction
- * filters see the same sent-message history regardless of which chunk recorded it.
- */
-const TELEGRAM_SENT_MESSAGES_KEY = Symbol.for("openclaw.telegramSentMessages");
+type SentMessageConfig = Pick<OpenClawConfig, "agents" | "bindings" | "channels" | "session">;
+type SentMessageStore = Map<string, Map<string, number>>;
+type SentMessagePersistentStore = PluginStateKeyedStore<PersistedSentMessage>;
 
-let sentMessages: Map<string, CacheEntry> | undefined;
+type SentMessageBucket = {
+  store: SentMessageStore;
+  nextCleanupAt: number;
+};
 
-function getSentMessages(): Map<string, CacheEntry> {
-  sentMessages ??= resolveGlobalMap<string, CacheEntry>(TELEGRAM_SENT_MESSAGES_KEY);
-  return sentMessages;
+type SentMessageState = {
+  bucketsByScope: Map<string, Promise<SentMessageBucket>>;
+};
+
+function getSentMessageState(): SentMessageState {
+  return resolveGlobalSingleton(TELEGRAM_SENT_MESSAGES_STATE_KEY, () => ({
+    bucketsByScope: new Map(),
+  }));
 }
 
-function getChatKey(chatId: number | string): string {
-  return String(chatId);
+function openSentMessageStore(): SentMessagePersistentStore {
+  return getTelegramRuntime().state.openKeyedStore<PersistedSentMessage>({
+    namespace: TELEGRAM_SENT_MESSAGE_CACHE_NAMESPACE,
+    maxEntries: TELEGRAM_SENT_MESSAGE_CACHE_MAX_ENTRIES,
+  });
 }
 
-function cleanupExpired(entry: CacheEntry): void {
-  const now = Date.now();
-  for (const [msgId, timestamp] of entry.timestamps) {
-    if (now - timestamp > TTL_MS) {
-      entry.timestamps.delete(msgId);
+function cleanupExpired(
+  store: SentMessageStore,
+  scopeKey: string,
+  entry: Map<string, number>,
+  now: number,
+): void {
+  for (const [id, timestamp] of entry) {
+    if (now - timestamp >= TTL_MS) {
+      entry.delete(id);
     }
   }
+  if (entry.size === 0) {
+    store.delete(scopeKey);
+  }
 }
 
-/**
- * Record a message ID as sent by the bot.
- */
-export function recordSentMessage(chatId: number | string, messageId: number): void {
-  const key = getChatKey(chatId);
-  const sentMessages = getSentMessages();
-  let entry = sentMessages.get(key);
+function cleanupExpiredSentMessages(store: SentMessageStore, now: number): void {
+  for (const [scopeKey, entry] of store) {
+    cleanupExpired(store, scopeKey, entry, now);
+  }
+}
+
+async function readPersistedSentMessages(scopeKey: string): Promise<SentMessageStore> {
+  const now = Date.now();
+  const store: SentMessageStore = new Map();
+  try {
+    for (const entry of await openSentMessageStore().entries()) {
+      if (entry.value.scopeKey !== scopeKey || now - entry.value.timestamp > TTL_MS) {
+        continue;
+      }
+      let messages = store.get(entry.value.chatId);
+      if (!messages) {
+        messages = new Map<string, number>();
+        store.set(entry.value.chatId, messages);
+      }
+      messages.set(entry.value.messageId, entry.value.timestamp);
+    }
+  } catch (error) {
+    logVerbose(`telegram: failed to read sent-message cache: ${String(error)}`);
+  }
+  return store;
+}
+
+type SentMessageOwner = { accountId?: string; agentId?: string };
+
+function resolveSentMessageScopeKey(cfg?: SentMessageConfig, owner?: SentMessageOwner): string {
+  const agentId =
+    owner?.agentId?.trim() ||
+    (cfg
+      ? resolveTelegramAccountOwnerAgentId({
+          cfg,
+          accountId: owner?.accountId,
+        })
+      : "main");
+  // The transient cache follows the current owner, including a changed default.
+  const storePath = resolveStorePath(cfg?.session?.store, { agentId });
+  return createHash("sha256").update(storePath, "utf8").digest("hex").slice(0, 24);
+}
+
+function sentMessageEntryKey(scopeKey: string, chatId: string, messageId: string): string {
+  return createHash("sha256")
+    .update(`${scopeKey}\0${chatId}\0${messageId}`, "utf8")
+    .digest("hex")
+    .slice(0, 32);
+}
+
+function getSentMessageBucket(scopeKey: string): Promise<SentMessageBucket> {
+  const state = getSentMessageState();
+  const existing = state.bucketsByScope.get(scopeKey);
+  if (existing) {
+    return existing;
+  }
+  const bucket = readPersistedSentMessages(scopeKey).then((store) => ({
+    store,
+    nextCleanupAt: Date.now() + CLEANUP_INTERVAL_MS,
+  }));
+  state.bucketsByScope.set(scopeKey, bucket);
+  return bucket;
+}
+
+async function persistSentMessage(
+  scopeKey: string,
+  chatId: string,
+  messageId: string,
+  timestamp: number,
+): Promise<void> {
+  try {
+    await openSentMessageStore().register(
+      sentMessageEntryKey(scopeKey, chatId, messageId),
+      { scopeKey, chatId, messageId, timestamp },
+      { ttlMs: TTL_MS },
+    );
+  } catch (error) {
+    logVerbose(`telegram: failed to persist sent-message cache: ${String(error)}`);
+  }
+}
+
+export async function recordSentMessage(
+  chatId: number | string,
+  messageId: number,
+  cfg?: SentMessageConfig,
+  owner?: SentMessageOwner,
+): Promise<void> {
+  const scopeKey = String(chatId);
+  const idKey = String(messageId);
+  const now = Date.now();
+  const cacheScopeKey = resolveSentMessageScopeKey(cfg, owner);
+  const bucketTask = getSentMessageBucket(cacheScopeKey);
+  const persistence = persistSentMessage(cacheScopeKey, scopeKey, idKey, now);
+  const bucket = await bucketTask;
+  const { store } = bucket;
+  let entry = store.get(scopeKey);
   if (!entry) {
-    entry = { timestamps: new Map() };
-    sentMessages.set(key, entry);
+    entry = new Map<string, number>();
+    store.set(scopeKey, entry);
   }
-  entry.timestamps.set(messageId, Date.now());
-  // Periodic cleanup
-  if (entry.timestamps.size > 100) {
-    cleanupExpired(entry);
+  entry.set(idKey, now);
+  if (now >= bucket.nextCleanupAt) {
+    cleanupExpiredSentMessages(store, now);
+    bucket.nextCleanupAt = now + CLEANUP_INTERVAL_MS;
   }
+  await persistence;
 }
 
-/**
- * Check if a message was sent by the bot.
- */
-export function wasSentByBot(chatId: number | string, messageId: number): boolean {
-  const key = getChatKey(chatId);
-  const entry = getSentMessages().get(key);
+export async function wasSentByBot(
+  chatId: number | string,
+  messageId: number,
+  cfg?: SentMessageConfig,
+  owner?: SentMessageOwner,
+): Promise<boolean> {
+  const scopeKey = String(chatId);
+  const idKey = String(messageId);
+  const { store } = await getSentMessageBucket(resolveSentMessageScopeKey(cfg, owner));
+  const entry = store.get(scopeKey);
   if (!entry) {
     return false;
   }
-  // Clean up expired entries on read
-  cleanupExpired(entry);
-  return entry.timestamps.has(messageId);
-}
-
-/**
- * Clear all cached entries (for testing).
- */
-export function clearSentMessageCache(): void {
-  getSentMessages().clear();
+  cleanupExpired(store, scopeKey, entry, Date.now());
+  return entry.has(idKey);
 }

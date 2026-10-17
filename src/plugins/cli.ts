@@ -1,64 +1,116 @@
 import type { Command } from "commander";
-import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
-import type { OpenClawConfig } from "../config/config.js";
-import { loadConfig } from "../config/config.js";
-import { createSubsystemLogger } from "../logging/subsystem.js";
-import { loadOpenClawPlugins } from "./loader.js";
-import type { PluginLogger } from "./types.js";
+import { getRuntimeConfigSnapshot, readConfigFileSnapshot } from "../config/config.js";
+import {
+  createInvalidConfigError,
+  formatInvalidConfigDetails,
+} from "../config/io.invalid-config.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
+import {
+  createPluginCliLoadSession,
+  type PluginCliLoadSession,
+  loadPluginCliRegistrationEntriesWithDefaults,
+  type PluginCliLoaderOptions,
+} from "./cli-registry-loader.js";
+import { getPluginCache } from "./plugin-cache.js";
+import { registerPluginCliCommandGroups } from "./register-plugin-cli-command-groups.js";
+import { createPluginRuntimeLoaderLogger } from "./runtime/load-context.js";
 
-const log = createSubsystemLogger("plugins");
+type PluginCliRegistrationMode = "eager" | "lazy" | "metadata";
 
-export function registerPluginCliCommands(
+type RegisterPluginCliOptions = {
+  mode?: PluginCliRegistrationMode;
+  primary?: string | null;
+  skipPluginValidation?: boolean;
+  session?: PluginCliLoadSession;
+};
+
+const logger = createPluginRuntimeLoaderLogger();
+
+export async function registerPluginCliCommandsFromValidatedConfig(
   program: Command,
-  cfg?: OpenClawConfig,
   env?: NodeJS.ProcessEnv,
-) {
-  const config = cfg ?? loadConfig();
-  const workspaceDir = resolveAgentWorkspaceDir(config, resolveDefaultAgentId(config));
-  const logger: PluginLogger = {
-    info: (msg: string) => log.info(msg),
-    warn: (msg: string) => log.warn(msg),
-    error: (msg: string) => log.error(msg),
-    debug: (msg: string) => log.debug(msg),
-  };
-  const registry = loadOpenClawPlugins({
-    config,
-    workspaceDir,
-    env,
-    logger,
-  });
-
-  const existingCommands = new Set(program.commands.map((cmd) => cmd.name()));
-
-  for (const entry of registry.cliRegistrars) {
-    if (entry.commands.length > 0) {
-      const overlaps = entry.commands.filter((command) => existingCommands.has(command));
-      if (overlaps.length > 0) {
-        log.debug(
-          `plugin CLI register skipped (${entry.pluginId}): command already registered (${overlaps.join(
-            ", ",
-          )})`,
-        );
-        continue;
-      }
+  loaderOptions?: PluginCliLoaderOptions,
+  options?: RegisterPluginCliOptions,
+): Promise<OpenClawConfig> {
+  const session = options?.session ?? createPluginCliLoadSession(getPluginCache());
+  try {
+    const snapshot = await session.readConfig(() =>
+      readConfigFileSnapshot({ skipPluginValidation: options?.skipPluginValidation }),
+    );
+    if (!snapshot.valid) {
+      throw createInvalidConfigError(snapshot.path, formatInvalidConfigDetails(snapshot.issues));
     }
-    try {
-      const result = entry.register({
-        program,
-        config,
-        workspaceDir,
-        logger,
+    const cfg = getRuntimeConfigSnapshot() ?? snapshot.runtimeConfig;
+    const mode = options?.mode ?? "eager";
+    const primary = options?.primary ?? undefined;
+    const entries = await loadPluginCliRegistrationEntriesWithDefaults(
+      {
+        cfg,
+        env,
+        loaderOptions,
+        primaryCommand: primary,
+        session,
+      },
+      mode === "metadata" ? "metadata" : "runtime",
+    );
+
+    const groups = entries.map((entry) => {
+      if (
+        mode === "eager" ||
+        (mode === "lazy" &&
+          primary &&
+          (entry.parentPath[0] === primary ||
+            entry.names.includes(primary) ||
+            entry.placeholders.some((descriptor) => descriptor.name === primary)))
+      ) {
+        return entry;
+      }
+      // Deferred expansion gets fresh preparation in the parsing generation. Never retain
+      // startup registrars past close, including help/completion on a prepared program.
+      return Object.assign({}, entry, {
+        register: async (target: Command) => {
+          const deferred = createPluginCliLoadSession(getPluginCache(), {
+            resources: session.resources,
+          });
+          try {
+            const fresh = await loadPluginCliRegistrationEntriesWithDefaults({
+              cfg,
+              env,
+              loaderOptions,
+              primaryCommand: mode === "metadata" ? primary : undefined,
+              session: deferred,
+            });
+            const match = fresh.find(
+              (candidate) =>
+                candidate.pluginId === entry.pluginId &&
+                candidate.parentPath.join("\0") === entry.parentPath.join("\0") &&
+                candidate.names.join("\0") === entry.names.join("\0"),
+            );
+            if (!match) {
+              throw new Error(
+                `Plugin CLI registration is no longer available (${entry.pluginId}).`,
+              );
+            }
+            await match.register(target);
+          } finally {
+            deferred.close();
+          }
+        },
       });
-      if (result && typeof result.then === "function") {
-        void result.catch((err) => {
-          log.warn(`plugin CLI register failed (${entry.pluginId}): ${String(err)}`);
-        });
-      }
-      for (const command of entry.commands) {
-        existingCommands.add(command);
-      }
-    } catch (err) {
-      log.warn(`plugin CLI register failed (${entry.pluginId}): ${String(err)}`);
+    });
+    await registerPluginCliCommandGroups(program, groups, {
+      mode: mode === "metadata" ? "lazy" : mode,
+      // Parent help needs descriptors; actual expansion retains the fresh loader above.
+      primary: mode === "metadata" ? undefined : primary,
+      // Include aliases: alias-only root names (cron|automations, tui|terminal)
+      // are owned commands too; a plugin claiming one would crash registration.
+      existingCommands: new Set(program.commands.flatMap((cmd) => [cmd.name(), ...cmd.aliases()])),
+      logger,
+    });
+    return cfg;
+  } finally {
+    if (!options?.session) {
+      session.close();
     }
   }
 }

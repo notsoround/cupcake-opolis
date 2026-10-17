@@ -1,34 +1,14 @@
+// Discord tests cover agent components.wildcard plugin behavior.
 import { describe, expect, it } from "vitest";
 import { buildDiscordComponentCustomId, buildDiscordModalCustomId } from "../components.js";
-import {
-  createDiscordComponentButton,
-  createDiscordComponentChannelSelect,
-  createDiscordComponentMentionableSelect,
-  createDiscordComponentModal,
-  createDiscordComponentRoleSelect,
-  createDiscordComponentStringSelect,
-  createDiscordComponentUserSelect,
-} from "./agent-components.js";
-
-type WildcardComponent = {
-  customId: string;
-  customIdParser: (id: string) => { key: string; data: unknown };
-};
-
-function asWildcardComponent(value: unknown): WildcardComponent {
-  return value as WildcardComponent;
-}
+import { createDiscordComponentControls, createDiscordComponentModal } from "./agent-components.js";
 
 function createWildcardComponents() {
-  const context = {} as Parameters<typeof createDiscordComponentButton>[0];
+  const context = { cfg: {}, accountId: "default" };
+  expect(createDiscordComponentControls).toHaveLength(6);
   return [
-    asWildcardComponent(createDiscordComponentButton(context)),
-    asWildcardComponent(createDiscordComponentStringSelect(context)),
-    asWildcardComponent(createDiscordComponentUserSelect(context)),
-    asWildcardComponent(createDiscordComponentRoleSelect(context)),
-    asWildcardComponent(createDiscordComponentMentionableSelect(context)),
-    asWildcardComponent(createDiscordComponentChannelSelect(context)),
-    asWildcardComponent(createDiscordComponentModal(context)),
+    ...createDiscordComponentControls.map((createControl) => createControl(context)),
+    createDiscordComponentModal(context),
   ];
 }
 
@@ -37,7 +17,7 @@ describe("discord wildcard component registration ids", () => {
     const components = createWildcardComponents();
     const customIds = components.map((component) => component.customId);
 
-    expect(customIds.every((id) => id !== "*")).toBe(true);
+    expect(customIds.some((id) => id === "*")).toBe(false);
     expect(new Set(customIds).size).toBe(customIds.length);
   });
 

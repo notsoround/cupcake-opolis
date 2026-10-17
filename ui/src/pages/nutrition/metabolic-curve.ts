@@ -1,24 +1,33 @@
+import "./cupcake-motion.css";
+import "./metabolic-curve.css";
 import { html, nothing, svg, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
 import { t } from "../../i18n/index.ts";
 import { OpenClawLightDomElement } from "../../lit/openclaw-element.ts";
 import { getSafeLocalStorage } from "../../local-storage.ts";
 import {
+  buildMetabolicSeries,
   monotonePath,
   sampleNetAt,
   STEPS_INCLUDED_IN_TDEE,
   type MetabolicSeries,
+  type MetabolicSeriesInput,
   type Point,
 } from "./metabolic-series.ts";
 
 const PRISM_STORAGE_KEY = "openclaw.control.cupcake.curvePrism.v1";
-const HEIGHT = 188;
+const MIN_HEIGHT = 188;
+const MAX_HEIGHT = 260;
 const PAD = { top: 18, right: 14, bottom: 24, left: 14 } as const;
 /** Spring for path transitions: stiff and well damped, settles inside 500ms. */
 const SPRING = { stiffness: 260, damping: 26 } as const;
 const MAX_ANIMATION_MS = 480;
 
 const kcal = (value: number) => Math.round(value).toLocaleString();
+const signed = (value: number, sign: "+" | "−") =>
+  Math.round(value) === 0 ? "0" : `${sign}${kcal(value)}`;
+/** Markers sit just after the event, where the line has already moved. */
+const MARKER_SETTLE_MS = 10 * 60_000;
 
 export function formatNet(value: number): string {
   return value <= 0
@@ -39,6 +48,10 @@ function loadPrism(): boolean {
 }
 
 let gradientIds = 0;
+function nextGradientId(): string {
+  gradientIds += 1;
+  return `cupcake-curve-${gradientIds}`;
+}
 
 /**
  * Live metabolic balance curve: one line for net energy since midnight, with a
@@ -46,7 +59,9 @@ let gradientIds = 0;
  * projection to midnight, and spring-animated transitions when data changes.
  */
 class MetabolicCurve extends OpenClawLightDomElement {
-  @property({ attribute: false }) series: MetabolicSeries | null = null;
+  /** Raw Today data; the series is derived here so the page stays lean. */
+  @property({ attribute: false }) input: MetabolicSeriesInput | null = null;
+  private series: MetabolicSeries | null = null;
   /** Bumps when logged data (not just the clock) changes; only then animate. */
   @property({ type: Number }) revision = 0;
   @property({ attribute: false }) sampleKind: "sample" | "live" = "sample";
@@ -60,7 +75,7 @@ class MetabolicCurve extends OpenClawLightDomElement {
   private shownNet = 0;
   private frame = 0;
   private observer: ResizeObserver | null = null;
-  private readonly gradientId = `cupcake-curve-${++gradientIds}`;
+  private readonly gradientId = nextGradientId();
 
   override connectedCallback() {
     super.connectedCallback();
@@ -83,6 +98,9 @@ class MetabolicCurve extends OpenClawLightDomElement {
   }
 
   protected override willUpdate(changed: PropertyValues<this>) {
+    if (changed.has("input")) {
+      this.series = this.input ? buildMetabolicSeries(this.input) : null;
+    }
     if (!changed.has("revision") || !this.series || this.shown.length === 0) {
       return;
     }
@@ -199,8 +217,10 @@ class MetabolicCurve extends OpenClawLightDomElement {
     this.shownNet = net;
 
     const width = Math.max(240, this.width);
+    // Phones keep a compact 188px chart; wider panels grow toward 260px.
+    const height = Math.round(Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, width * 0.27)));
     const innerWidth = width - PAD.left - PAD.right;
-    const innerHeight = HEIGHT - PAD.top - PAD.bottom;
+    const innerHeight = height - PAD.top - PAD.bottom;
     const span = series.dayEnd - series.dayStart;
     const lo = Math.min(-150, series.projectedEndOfDay, ...values);
     const hi = Math.max(150, ...values);
@@ -265,8 +285,8 @@ class MetabolicCurve extends OpenClawLightDomElement {
       <svg
         class="cupcake-curve__chart"
         width=${width}
-        height=${HEIGHT}
-        viewBox="0 0 ${width} ${HEIGHT}"
+        height=${height}
+        viewBox="0 0 ${width} ${height}"
         role="img"
         aria-label=${t("cupcake.curve.chartLabel", { value: formatNet(series.net) })}
       >
@@ -302,7 +322,7 @@ class MetabolicCurve extends OpenClawLightDomElement {
           (
             time,
           ) => svg`<line class="cupcake-curve__grid" x1=${x(time)} x2=${x(time)} y1=${PAD.top} y2=${PAD.top + innerHeight} />
-            <text class="cupcake-curve__axis" x=${x(time)} y=${HEIGHT - 6}>${new Date(time).toLocaleTimeString([], { hour: "numeric" })}</text>`,
+            <text class="cupcake-curve__axis" x=${x(time)} y=${height - 6}>${new Date(time).toLocaleTimeString([], { hour: "numeric" })}</text>`,
         )}
         <line
           class="cupcake-curve__zero"
@@ -322,13 +342,16 @@ class MetabolicCurve extends OpenClawLightDomElement {
         <path
           class="cupcake-curve__line"
           d=${line}
-          stroke=${this.prism ? `url(#${id}-prism)` : nothing}
+          style=${this.prism ? `stroke: url(#${id}-prism)` : nothing}
         />
         ${series.events.map((event) => {
-          const value = sampleNetAt(shownSamples, event.at);
+          const value = sampleNetAt(
+            shownSamples,
+            Math.min(series.now, event.at + MARKER_SETTLE_MS),
+          );
           return svg`<circle
             class="cupcake-curve__marker cupcake-curve__marker--${event.kind}"
-            cx=${x(event.at)}
+            cx=${x(Math.min(series.now, event.at + MARKER_SETTLE_MS))}
             cy=${y(value)}
             r="3.5"
           ><title>${event.label} · ${event.kcal > 0 ? "+" : "−"}${kcal(Math.abs(event.kcal))} kcal</title></circle>`;
@@ -344,16 +367,16 @@ class MetabolicCurve extends OpenClawLightDomElement {
         <circle class="cupcake-curve__now" cx=${last.x} cy=${last.y} r="4.5" />
       </svg>
       <ul class="cupcake-curve__chips">
-        ${this.renderChip(t("cupcake.curve.eaten"), `+${kcal(series.eaten)}`, "intake")}
-        ${this.renderChip(t("cupcake.curve.bought"), `+${kcal(series.bought)}`, "intake", sample)}
-        ${this.renderChip(t("cupcake.curve.living"), `−${kcal(series.living)}`, "burn")}
+        ${this.renderChip(t("cupcake.curve.eaten"), signed(series.eaten, "+"), "intake")}
+        ${this.renderChip(t("cupcake.curve.bought"), signed(series.bought, "+"), "intake", sample)}
+        ${this.renderChip(t("cupcake.curve.living"), signed(series.living, "−"), "burn")}
         ${this.renderChip(
           t("cupcake.curve.steps"),
           t("cupcake.curve.stepsValue", { steps: kcal(series.steps), kcal: kcal(series.stepBurn) }),
           "burn",
           sample,
         )}
-        ${this.renderChip(t("cupcake.curve.exercise"), `−${kcal(series.exercise)}`, "burn")}
+        ${this.renderChip(t("cupcake.curve.exercise"), signed(series.exercise, "−"), "burn")}
       </ul>
       <p class="cupcake-card__basis">
         ${t("cupcake.curve.basis", {

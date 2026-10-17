@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import "./exercise-quick-log.ts";
 import { EXERCISE_CHANGED_EVENT, summarizeEstimateItem } from "./exercise-quick-log.ts";
 import { createSampleNutritionAdapter, type NutritionAdapter } from "./nutrition-adapter.ts";
 import { setNutritionAdapterForTesting } from "./nutrition-source.ts";
@@ -35,8 +34,10 @@ async function settle(element: QuickLog) {
 async function mount(adapter: NutritionAdapter) {
   setNutritionAdapterForTesting(adapter);
   const element = document.createElement("openclaw-exercise-quick-log") as QuickLog;
-  const changed = vi.fn(async () => {
-    element.exercises = await adapter.listExercises({ start: 0, end: Date.now() + 1 });
+  const changed = vi.fn(() => {
+    void adapter.listExercises({ start: 0, end: Date.now() + 1 }).then((entries) => {
+      element.exercises = entries;
+    });
   });
   element.addEventListener(EXERCISE_CHANGED_EVENT, changed);
   document.body.append(element);
@@ -99,19 +100,24 @@ describe("talk-to-log exercise", () => {
 
   it("starts dictation on one tap and logs what was said", async () => {
     const instances: FakeRecognition[] = [];
-    class FakeRecognition {
+    class FakeRecognition extends EventTarget {
       lang = "";
       continuous = true;
       interimResults = false;
       maxAlternatives = 0;
-      onresult: ((event: unknown) => void) | null = null;
-      onerror: ((event: unknown) => void) | null = null;
-      onend: (() => void) | null = null;
       start = vi.fn();
-      stop = vi.fn(() => this.onend?.());
+      stop = vi.fn(() => this.dispatchEvent(new Event("end")));
       abort = vi.fn();
       constructor() {
+        super();
         instances.push(this);
+      }
+      speak(transcript: string) {
+        const result = Object.assign([{ transcript }], { isFinal: true });
+        this.dispatchEvent(
+          Object.assign(new Event("result"), { resultIndex: 0, results: [result] }),
+        );
+        this.dispatchEvent(new Event("end"));
       }
     }
     (globalThis as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition = FakeRecognition;
@@ -124,9 +130,7 @@ describe("talk-to-log exercise", () => {
     expect(recognition.start).toHaveBeenCalledTimes(1);
     expect(recognition.interimResults).toBe(true);
     expect(element.querySelector(".cupcake-exercise__mic--live")).not.toBeNull();
-    const result = Object.assign([{ transcript: "walked 20 minutes" }], { isFinal: true });
-    recognition.onresult?.({ resultIndex: 0, results: [result] });
-    recognition.onend?.();
+    recognition.speak("walked 20 minutes");
     await settle(element);
     expect(log).toHaveBeenCalledWith(
       expect.objectContaining({

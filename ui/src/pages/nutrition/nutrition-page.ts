@@ -21,10 +21,7 @@ import {
   shiftCalendarAnchor,
   type CalendarView,
 } from "./energy-balance.ts";
-// Registers <openclaw-exercise-quick-log>, which fires cupcake-exercise-changed.
-import "./exercise-quick-log.ts";
-import "./metabolic-curve.ts";
-import { buildMetabolicSeries } from "./metabolic-series.ts";
+import type { MetabolicSeriesInput } from "./metabolic-series.ts";
 import type {
   ExerciseEntry,
   GlucoseReading,
@@ -66,6 +63,11 @@ class NutritionPage extends OpenClawLightDomElement {
 
   override connectedCallback() {
     super.connectedCallback();
+    // The curve and the talk-to-log exercise widget load off the startup
+    // path; their hosts reserve space until the custom elements upgrade.
+    void import("./metabolic-curve.ts");
+    // <openclaw-exercise-quick-log> fires cupcake-exercise-changed.
+    void import("./exercise-quick-log.ts");
     this.now = Date.now();
     this.clock = globalThis.setInterval(() => {
       const previousDay = localDayBounds(this.now).dayStart;
@@ -198,19 +200,19 @@ class NutritionPage extends OpenClawLightDomElement {
   }
 
   private renderCurve() {
-    const series = this.targets
-      ? buildMetabolicSeries({
+    const input: MetabolicSeriesInput | null = this.targets
+      ? {
           now: this.now,
           tdee: this.targets.tdee,
           meals: this.todayMeals,
           receipts: this.todayReceipts,
           exercises: this.todayExercises,
           steps: this.todaySteps,
-        })
+        }
       : null;
     return html`<openclaw-metabolic-curve
       class="cupcake-card cupcake-card--curve"
-      .series=${series}
+      .input=${input}
       .revision=${this.dataRevision}
       .sampleKind=${nutritionAdapter().kind}
     ></openclaw-metabolic-curve>`;

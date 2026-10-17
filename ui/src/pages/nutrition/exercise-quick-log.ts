@@ -1,3 +1,5 @@
+import "./cupcake-motion.css";
+import "./exercise-quick-log.css";
 import { html, nothing } from "lit";
 import { property, query, state } from "lit/decorators.js";
 import { icons } from "../../components/icons.ts";
@@ -99,9 +101,10 @@ class ExerciseQuickLog extends OpenClawLightDomElement {
       onEnd: (text) => {
         this.listening = false;
         this.dictation = null;
-        const spoken = text || this.text;
-        if (spoken.trim()) {
-          this.text = spoken;
+        // Talk-to-log: a finished utterance logs immediately. If recognition
+        // ended without speech, keep whatever was typed and let Matt submit.
+        if (text.trim()) {
+          this.text = text;
           void this.submit();
         } else {
           this.input?.focus();
@@ -216,6 +219,12 @@ class ExerciseQuickLog extends OpenClawLightDomElement {
           }
           @input=${(event: InputEvent) => {
             this.text = (event.target as HTMLInputElement).value;
+            // Typing means Matt chose the keyboard; stop listening quietly.
+            if (this.listening && event.isTrusted) {
+              this.dictation?.abort();
+              this.dictation = null;
+              this.listening = false;
+            }
             if (this.status.kind !== "idle") {
               this.status = { kind: "idle" };
             }

@@ -16,9 +16,9 @@ type Recognition = {
   continuous: boolean;
   interimResults: boolean;
   maxAlternatives: number;
-  onresult: ((event: RecognitionEvent) => void) | null;
-  onerror: ((event: { error: string }) => void) | null;
-  onend: (() => void) | null;
+  addEventListener(type: "result", listener: (event: RecognitionEvent) => void): void;
+  addEventListener(type: "error", listener: (event: { error: string }) => void): void;
+  addEventListener(type: "end", listener: () => void): void;
   start(): void;
   stop(): void;
   abort(): void;
@@ -64,7 +64,7 @@ export function startDictation(
   recognition.maxAlternatives = 1;
   let finalText = "";
   let aborted = false;
-  recognition.onresult = (event) => {
+  recognition.addEventListener("result", (event) => {
     let interim = "";
     for (let index = event.resultIndex; index < event.results.length; index += 1) {
       const result = event.results[index];
@@ -76,17 +76,17 @@ export function startDictation(
       }
     }
     handlers.onTranscript(`${finalText}${interim}`.trim());
-  };
-  recognition.onerror = (event) => {
+  });
+  recognition.addEventListener("error", (event) => {
     if (event.error !== "aborted" && event.error !== "no-speech") {
       handlers.onError(event.error);
     }
-  };
-  recognition.onend = () => {
+  });
+  recognition.addEventListener("end", () => {
     if (!aborted) {
       handlers.onEnd(finalText.trim());
     }
-  };
+  });
   try {
     recognition.start();
   } catch {

@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NutritionAdapter } from "./nutrition-adapter.ts";
+import "./exercise-quick-log.ts";
+import "./metabolic-curve.ts";
 import "./nutrition-page.ts";
 import { setNutritionAdapterForTesting } from "./nutrition-source.ts";
 
@@ -86,6 +88,12 @@ describe("Today screen", () => {
     expect(curve?.querySelectorAll(".cupcake-curve__sample")).toHaveLength(2);
     // Living burn to midnight: 800 deficit now + 1200 more.
     expect(curve?.textContent).toContain("By midnight: 2,000 kcal deficit");
+    const prism = curve?.querySelector<HTMLButtonElement>(".cupcake-curve__prism-toggle");
+    expect(prism?.getAttribute("aria-pressed")).toBe("false");
+    prism?.click();
+    await (curve as HTMLElement & { updateComplete: Promise<boolean> }).updateComplete;
+    expect(prism?.getAttribute("aria-pressed")).toBe("true");
+    expect(curve?.querySelector(".cupcake-curve__line")?.getAttribute("style")).toContain("url(#");
   });
 
   it("shows the TDEE basis read-only and links to Settings → Nutrition", async () => {

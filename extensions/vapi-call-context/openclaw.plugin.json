@@ -1,0 +1,18 @@
+{
+  "id": "vapi-call-context",
+  "categories": ["infrastructure"],
+  "name": "Vapi Call Context",
+  "description": "Answers Vapi assistant-request and tool-call webhooks with Cupcake's rendered persona and live call context (food, spend, last call, alarms).",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "routePath": {
+        "type": "string"
+      }
+    }
+  }
+}

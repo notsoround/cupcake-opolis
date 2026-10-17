@@ -1,0 +1,434 @@
+/* ===========================================
+   Cupcake nutrition: Today, calendar, receipts
+   Colors via base.css tokens only; cards are tier-2 surfaces.
+   =========================================== */
+
+.cupcake-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 72rem;
+  margin-inline: auto;
+  padding-block-end: var(--space-6);
+}
+
+.cupcake-sample-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--radius-md);
+  background: var(--accent-subtle);
+  color: var(--text);
+  font-size: var(--control-ui-text-sm);
+}
+
+.cupcake-sample-badge {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--accent-foreground);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cupcake-section-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+}
+
+.cupcake-today {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.cupcake-today__header,
+.cupcake-calendar__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.cupcake-today__date {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  font-weight: 400;
+}
+
+.cupcake-today__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-3);
+}
+
+.cupcake-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  .cupcake-card {
+    background: color-mix(in srgb, var(--card) 88%, transparent);
+    backdrop-filter: blur(12px) saturate(1.6);
+    -webkit-backdrop-filter: blur(12px) saturate(1.6);
+  }
+}
+
+.cupcake-card__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cupcake-card__label svg {
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+}
+
+.cupcake-card__value {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.cupcake-card__value--deficit {
+  color: var(--ok);
+}
+
+.cupcake-card__value--surplus {
+  color: var(--accent);
+}
+
+.cupcake-card__unit {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  font-weight: 400;
+}
+
+.cupcake-card__detail,
+.cupcake-card__basis {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--control-ui-text-sm);
+}
+
+.cupcake-card__basis {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.cupcake-progress {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+}
+
+.cupcake-progress__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--cupcake-progress, 0%);
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width var(--duration-normal) var(--ease-out);
+}
+
+.cupcake-progress--over .cupcake-progress__fill {
+  background: var(--warn);
+}
+
+.cupcake-quick-log {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.cupcake-quick-log .cupcake-card__label {
+  flex-basis: 100%;
+}
+
+.cupcake-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--text);
+  font-size: var(--control-ui-text-sm);
+}
+
+.cupcake-field small {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.cupcake-field--grow {
+  flex: 1 1 12rem;
+}
+
+.cupcake-field--kcal {
+  flex: 0 1 7rem;
+}
+
+.cupcake-field input {
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: var(--control-ui-input-text-size);
+}
+
+.cupcake-field input:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.cupcake-quick-log__submit {
+  min-height: 40px;
+}
+
+.cupcake-quick-log__status {
+  flex-basis: 100%;
+  min-height: 1lh;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.cupcake-targets {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.cupcake-targets summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.cupcake-targets__form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  align-items: end;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.cupcake-calendar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.cupcake-calendar__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.cupcake-calendar__range {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-strong);
+  font-weight: 600;
+  text-align: center;
+}
+
+.cupcake-calendar__grid {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cupcake-calendar__grid--week,
+.cupcake-calendar__grid--month {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.cupcake-calendar__grid--year {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.cupcake-calendar__cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-1);
+  width: 100%;
+  min-height: 56px;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+}
+
+.cupcake-calendar__cell:hover:where(:not(:disabled)) {
+  border-color: var(--border-hover);
+  background: var(--bg-hover);
+}
+
+.cupcake-calendar__cell:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.cupcake-calendar__cell:disabled {
+  opacity: 0.5;
+}
+
+.cupcake-calendar__cell--today {
+  border-color: var(--accent);
+}
+
+.cupcake-calendar__cell-label {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.cupcake-calendar__cell-value {
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.cupcake-meal-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cupcake-meal-list__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--control-ui-text-sm);
+}
+
+.cupcake-meal-list__time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cupcake-meal-list__name {
+  overflow: hidden;
+  color: var(--text-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cupcake-meal-list__kcal {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.cupcake-receipts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cupcake-receipt .cupcake-meal-list__item {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.cupcake-receipt__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.cupcake-receipt__merchant {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-md);
+}
+
+.cupcake-receipt__total {
+  color: var(--accent);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Phones: 44px tap targets and a denser calendar. */
+@media (max-width: 640px) {
+  .cupcake-field input,
+  .cupcake-quick-log__submit,
+  .cupcake-calendar__nav .btn {
+    min-height: 44px;
+  }
+
+  .cupcake-calendar__nav .btn--icon {
+    min-width: 44px;
+  }
+
+  .cupcake-calendar__grid--month .cupcake-calendar__cell {
+    min-height: 44px;
+    padding: var(--space-1);
+  }
+
+  .cupcake-calendar__grid--year {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 400px) {
+  .cupcake-calendar__grid--month .cupcake-calendar__cell-value {
+    font-size: var(--control-ui-text-xs);
+  }
+}

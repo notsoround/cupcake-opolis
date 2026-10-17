@@ -30,6 +30,8 @@ export const SIDEBAR_NAV_ROUTES = [
   "plugins",
   "apps",
   "portals",
+  "nutrition",
+  "receipts",
 ] as const satisfies readonly NavigationRouteId[];
 
 // Routes presented as tabs of the Plugins hub. The sidebar highlights the
@@ -383,6 +385,8 @@ const NAVIGATION_PRESENTATION: Record<NavigationRouteId, NavigationPresentation>
   logs: navigationPresentation("scrollText", "logs"),
   plugin: navigationPresentation("plug", "plugin"),
   "new-session": ["plus", "newSession.title", "newSession.hint"],
+  nutrition: navigationPresentation("utensils", "nutrition"),
+  receipts: navigationPresentation("receipt", "receipts"),
 };
 
 export function isSettingsNavigationRoute(routeId: NavigationRouteId): boolean {

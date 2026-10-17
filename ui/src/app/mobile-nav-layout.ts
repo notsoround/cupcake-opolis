@@ -43,3 +43,17 @@ export function shouldMergeChatChrome(params: {
 export function mergeChatPageChrome(mobileNavLayout: boolean, onboarding: boolean): boolean {
   return shouldMergeChatChrome({ mobileNavLayout, routeId: "chat", onboarding });
 }
+
+/**
+ * Phone tab bar (CSS shows it at <=768px only). Native shells keep their own
+ * navigation chrome, and onboarding/embeds render without app navigation.
+ */
+export function shouldShowMobileTabBar(params: {
+  mobileNavLayout: boolean;
+  onboarding: boolean;
+  nativeEmbed: boolean;
+}): boolean {
+  return (
+    params.mobileNavLayout && !params.onboarding && !params.nativeEmbed && !hasNativeShellClass()
+  );
+}

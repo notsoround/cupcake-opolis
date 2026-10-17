@@ -97,6 +97,9 @@ const APP_ROUTE_DEFINITIONS = {
   devices: { path: "/settings/devices", aliases: ["/nodes"] },
   "cloud-workers": { path: "/settings/cloud-workers" },
   plugin: { path: "/plugin" },
+  // Cupcake nutrition surfaces. /today is the Today home screen's short alias.
+  nutrition: { path: "/nutrition", aliases: ["/today"] },
+  receipts: { path: "/receipts" },
 } as const;
 
 export type RouteId = keyof typeof APP_ROUTE_DEFINITIONS;

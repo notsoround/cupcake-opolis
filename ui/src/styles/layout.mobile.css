@@ -649,3 +649,121 @@ html.openclaw-native-desktop body .shell--mobile-nav {
     max-width: 140px;
   }
 }
+
+/* ===========================================
+   Phone tab bar (<=768px)
+   The drawer breakpoint above (shell--mobile-nav) keeps the sidebar as an
+   overlay; at phone width the primary destinations also move into a bottom
+   tab bar and "More" opens that same drawer, so every sidebar destination
+   stays reachable. The host sets shell--bottom-tabs (owner-set class, not
+   :has()). Tier-1 navigation glass, 44px+ targets, safe-area aware.
+   =========================================== */
+
+.mobile-tab-bar {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .shell--mobile-nav.shell--bottom-tabs {
+    /* Extend through the home-indicator inset so the bar's glass reaches the
+       screen edge; the bar pads its own content back above the inset. */
+    height: calc(var(--shell-content-height) + var(--shell-safe-area-bottom));
+    grid-template-rows: var(--shell-topbar-height) minmax(0, 1fr) auto;
+    grid-template-areas:
+      "topbar"
+      "content"
+      "tabbar";
+  }
+
+  .shell--mobile-nav.shell--bottom-tabs.shell--connection-status {
+    grid-template-rows: var(--shell-topbar-height) auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "topbar"
+      "connection"
+      "content"
+      "tabbar";
+  }
+
+  .shell--bottom-tabs > .mobile-tab-bar {
+    grid-area: tabbar;
+    position: relative;
+    z-index: 40;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 2px;
+    padding: 4px 8px calc(4px + var(--shell-safe-area-bottom));
+    border-top: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter: blur(12px) saturate(1.6);
+    -webkit-backdrop-filter: blur(12px) saturate(1.6);
+  }
+
+  /* The on-screen keyboard owns the bottom edge while it is open
+     (shell-viewport.ts sets the attribute). */
+  :root[data-shell-keyboard-open] .shell--bottom-tabs > .mobile-tab-bar {
+    display: none;
+  }
+
+  .mobile-tab-bar__tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-width: 44px;
+    min-height: 48px;
+    padding: 4px 2px;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: var(--control-ui-text-xs);
+    font-weight: 500;
+    line-height: 1.2;
+    text-decoration: none;
+    transition:
+      color var(--duration-fast) var(--ease-out),
+      background-color var(--duration-fast) var(--ease-out);
+  }
+
+  .mobile-tab-bar__tab:hover {
+    color: var(--text);
+  }
+
+  .mobile-tab-bar__tab:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+
+  .mobile-tab-bar__tab--active {
+    color: var(--accent);
+    background: var(--accent-subtle);
+  }
+
+  .mobile-tab-bar__icon {
+    display: inline-flex;
+  }
+
+  .mobile-tab-bar__icon svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .mobile-tab-bar__label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 400px) {
+  .shell--bottom-tabs > .mobile-tab-bar {
+    padding-inline: 4px;
+  }
+
+  .mobile-tab-bar__label {
+    font-size: 10px;
+  }
+}

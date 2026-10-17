@@ -42,7 +42,12 @@ import {
   type OptionalCustomElement,
   SIDEBAR_ATTENTION_ELEMENT,
 } from "./lazy-custom-element.ts";
-import { isMobileNavLayout, shouldMergeChatChrome } from "./mobile-nav-layout.ts";
+import {
+  isMobileNavLayout,
+  shouldMergeChatChrome,
+  shouldShowMobileTabBar,
+} from "./mobile-nav-layout.ts";
+import { renderMobileTabBar } from "./mobile-tab-bar.ts";
 import type { NativeHistoryState } from "./native-web-chrome.ts";
 import { isNativeEmbedHost, nativeEmbedHost, isNativeWebChromeHost } from "./native-web-chrome.ts";
 import { beginNativeWindowDragFromTopInset } from "./native-window-drag.ts";
@@ -187,6 +192,7 @@ export function renderApplicationShell(host: ShellViewHost) {
   if (nativeWebChrome && !onboarding) {
     host.lazyCustomElements.preload(MACOS_TITLEBAR_ELEMENT, { reportError: true });
   }
+  const mobileTabBar = shouldShowMobileTabBar({ mobileNavLayout, onboarding, nativeEmbed });
   const mergedChatChrome = shouldMergeChatChrome({
     mobileNavLayout,
     routeId: activeRoute,
@@ -382,7 +388,7 @@ export function renderApplicationShell(host: ShellViewHost) {
         collapsedControls && homePanelAvailable ? "shell--home-control" : ""
       } ${shellConnectionStatus ? "shell--connection-status" : ""} ${
         floatingSidebarAttentionVisible(floatingUpdateCard) ? "shell--floating-attention" : ""
-      } ${host.navResizing ? "shell--nav-resizing" : ""}"
+      } ${host.navResizing ? "shell--nav-resizing" : ""} ${mobileTabBar ? "shell--bottom-tabs" : ""}"
       style=${`--shell-nav-expanded-width: ${navigationSnapshot.navWidth}px`}
       @theme-change=${(event: CustomEvent<ThemeModeChangeDetail>) => host.handleThemeChange(event)}
     >
@@ -553,6 +559,17 @@ export function renderApplicationShell(host: ShellViewHost) {
           .notFoundRecoveryReady=${gatewayConnected}
         ></openclaw-router-outlet>
       </main>
+      ${
+        mobileTabBar
+          ? renderMobileTabBar({
+              activeRoute,
+              basePath: context.basePath,
+              navDrawerOpen,
+              onNavigate: (routeId) => host.navigate(routeId),
+              onOpenMore: host.toggleNavigationSurface,
+            })
+          : nothing
+      }
       ${
         shellConnectionStatus
           ? html`<div class="shell-connection-status">

@@ -15,6 +15,8 @@ backdrop-filter: blur(12px) saturate(1.6);
 -webkit-backdrop-filter: blur(12px) saturate(1.6);
 ```
 
+The phone bottom tab bar (`.mobile-tab-bar`, `layout.mobile.css`, ≤768px) reuses these exact tier-1 values with a matching top hairline (`color-mix(in srgb, var(--border) 74%, transparent)`); it sits in the shell grid's `tabbar` row and pads itself by `--shell-safe-area-bottom` so the glass reaches the home-indicator edge. No new tier values were introduced.
+
 **Why these values:** the topbar mixes the root background with transparency so it stays readable while still refracting content behind it. `saturate(1.6)` brings out colour from blurred layers.
 
 ---
@@ -78,6 +80,7 @@ Use the `@supports` fallback pattern below instead. Browsers that lack `backdrop
 | Context                | Tier | Blur |
 | ---------------------- | ---- | ---- |
 | Top nav / sidebar rail | 1    | 12px |
+| Phone bottom tab bar   | 1    | 12px |
 | Chat composer          | 2    | 12px |
 | Modal / dialog         | 2    | 10px |
 | Dropdown / popover     | 2    | 8px  |

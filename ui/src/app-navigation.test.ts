@@ -214,8 +214,13 @@ describe("routeIdFromPath", () => {
     expect(routeIdFromPath("/about")).toBeNull();
   });
 
-  it("leaves root fallback to application startup", () => {
-    expect(routeIdFromPath("/")).toBeNull();
+  it("opens Today at the mount root", () => {
+    expect(routeIdFromPath("/")).toBe("nutrition");
+    expect(routeIdFromPath("/ui", "/ui")).toBe("nutrition");
+    expect(routeIdFromPath("/ui/", "/ui")).toBe("nutrition");
+    expect(routeIdFromPath("/today")).toBe("nutrition");
+    expect(routeIdFromPath("/nutrition")).toBe("nutrition");
+    expect(routeIdFromPath("/chat")).toBe("chat");
   });
 
   it("handles base paths", () => {
@@ -480,6 +485,7 @@ describe("SIDEBAR_NAV_ROUTES", () => {
       "custodian",
       "profile",
       "appearance",
+      "nutrition-settings",
       "notifications",
       "connection",
       "channels",
@@ -512,7 +518,13 @@ describe("SIDEBAR_NAV_ROUTES", () => {
     const settingsGroups = visibleSettingsNavigationGroups(true);
     const [firstGroup] = settingsGroups;
     expect(firstGroup?.labelKey).toBeNull();
-    expect(firstGroup?.routes).toEqual(["custodian", "profile", "appearance", "notifications"]);
+    expect(firstGroup?.routes).toEqual([
+      "custodian",
+      "profile",
+      "appearance",
+      "nutrition-settings",
+      "notifications",
+    ]);
     for (const group of settingsGroups.slice(1)) {
       expect(group.labelKey).toBeTruthy();
     }

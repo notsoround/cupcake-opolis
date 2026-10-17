@@ -1,7 +1,8 @@
 /**
  * Live energy-balance estimate for the Today screen. Pure, no I/O.
  *
- * Basis (shown to the user verbatim via cupcake.today.balanceBasis):
+ * Basis (the Today curve in metabolic-series.ts extends this with purchases,
+ * steps and logged exercise):
  *   burnedSoFar   = TDEE × (time elapsed since local midnight ÷ length of today)
  *   consumedSoFar = Σ calories of meals whose eatenAt is in [midnight, now]
  *   balance       = consumedSoFar − burnedSoFar   (negative = deficit)

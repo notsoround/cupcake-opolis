@@ -1,0 +1,42 @@
+/* Shared Cupcake spring curves for the lazily loaded Today widgets.
+   cubic-bezier fallbacks where linear() is unsupported. */
+openclaw-metabolic-curve,
+openclaw-exercise-quick-log {
+  --cupcake-spring: var(--ease-spring);
+  --cupcake-spring-soft: var(--ease-out);
+}
+
+@supports (transition-timing-function: linear(0, 1)) {
+  openclaw-metabolic-curve,
+  openclaw-exercise-quick-log {
+    /* Damped spring, ~8% overshoot. */
+    --cupcake-spring: linear(
+      0,
+      0.009,
+      0.035 2.1%,
+      0.141 4.4%,
+      0.723 12.9%,
+      0.938 16.7%,
+      1.017 20.4%,
+      1.067,
+      1.077 26.1%,
+      1.072 28.7%,
+      1.035 37.2%,
+      1.006 43.8%,
+      0.996 50.9%,
+      1
+    );
+    /* Critically damped: no overshoot, Apple-style settle. */
+    --cupcake-spring-soft: linear(
+      0,
+      0.05 2.5%,
+      0.19 6%,
+      0.5 14%,
+      0.76 24%,
+      0.9 34%,
+      0.97 46%,
+      0.993 60%,
+      1
+    );
+  }
+}

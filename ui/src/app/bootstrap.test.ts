@@ -180,6 +180,27 @@ describe("bootstrapApplication", () => {
     },
   );
 
+  it.each(["/", "/today"])("warms the Today landing chunk at startup: %s", async (pathname) => {
+    window.history.replaceState({}, "", pathname);
+    const runtime = bootstrapApplication();
+    const route = runtime.router.getRoute("nutrition");
+    if (!route) {
+      throw new Error("Missing Today route");
+    }
+    const component = vi.spyOn(route, "component").mockResolvedValue({ render: () => null });
+    const startGateway = vi.spyOn(runtime.context.gateway, "start").mockImplementation(() => {});
+    try {
+      const starting = runtime.start();
+      expect(component).toHaveBeenCalledTimes(1);
+      runtime.stop();
+      await starting;
+    } finally {
+      runtime.stop();
+      component.mockRestore();
+      startGateway.mockRestore();
+    }
+  });
+
   it("replaces a released dashboard query bookmark before router start", async () => {
     const initialLocation = {
       pathname: "/chat",

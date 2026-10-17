@@ -10,7 +10,7 @@ describe("resolveInitialApplicationLocation", () => {
   ])(
     "resolves persisted '$sessionKey' without aborting bootstrap",
     async ({ sessionKey, search, pathname }) => {
-      const location = { pathname: "/", search, hash: "" };
+      const location = { pathname: "/chat", search, hash: "" };
       const resolved = await resolveInitialApplicationLocation({
         location,
         basePath: "",
@@ -50,7 +50,7 @@ describe("resolveInitialApplicationLocation", () => {
         },
       };
       const pending = resolveInitialApplicationLocation({
-        location: { pathname: "/", search: "", hash: "" },
+        location: { pathname: "/chat", search: "", hash: "" },
         basePath: "",
         sessionKey: persistedSessionKey,
         gateway,
@@ -116,7 +116,7 @@ describe("resolveInitialApplicationLocation", () => {
 
     await expect(
       resolveInitialApplicationLocation({
-        location: { pathname: "/", search: "", hash: "" },
+        location: { pathname: "/chat", search: "", hash: "" },
         basePath: "",
         sessionKey: "agent:research:workspace",
         gateway: {

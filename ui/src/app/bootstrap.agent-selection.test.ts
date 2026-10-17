@@ -137,7 +137,7 @@ it("replaces a confirmed-missing remembered session with the agent main route", 
 
   await expect(
     resolveInitialApplicationLocation({
-      location: { pathname: "/", search: "?draft=hello", hash: "" },
+      location: { pathname: "/chat", search: "?draft=hello", hash: "" },
       basePath: "",
       sessionKey: "agent:research:thread:12345678-0000-4000-8000-000000000001",
       gateway: {
@@ -184,7 +184,7 @@ it("refreshes a cached roster and its default before accepting a remembered agen
 
   await expect(
     resolveInitialApplicationLocation({
-      location: { pathname: "/", search: "", hash: "" },
+      location: { pathname: "/chat", search: "", hash: "" },
       basePath: "",
       sessionKey: "agent:retired:main",
       gateway: {
@@ -234,7 +234,7 @@ it("validates a remembered session again after the Gateway client changes", asyn
   const rememberedKey = "agent:research:thread:12345678-0000-4000-8000-000000000001";
 
   const pending = resolveInitialApplicationLocation({
-    location: { pathname: "/", search: "", hash: "" },
+    location: { pathname: "/chat", search: "", hash: "" },
     basePath: "",
     sessionKey: rememberedKey,
     gateway,
@@ -291,7 +291,7 @@ it("loads the agent roster again after the Gateway client changes", async () => 
   const gateway = gatewayState as unknown as ApplicationContext["gateway"];
 
   const pending = resolveInitialApplicationLocation({
-    location: { pathname: "/", search: "", hash: "" },
+    location: { pathname: "/chat", search: "", hash: "" },
     basePath: "",
     sessionKey: "agent:research:main",
     gateway,

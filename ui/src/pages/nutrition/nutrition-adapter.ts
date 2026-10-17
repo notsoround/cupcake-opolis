@@ -12,6 +12,13 @@
  *   nutrition.targets.get / nutrition.targets.set     -> NutritionTargets
  *   nutrition.glucose.daily { day: "YYYY-MM-DD", at: "18:00" } -> GlucoseReading | null
  *   nutrition.receipts.list { start, end }            -> { receipts: Receipt[] }
+ *   nutrition.exercise.list / .log / .delete          -> ExerciseEntry[]
+ *   activity.steps.list     { start, end }            -> { buckets: StepBucket[] }
+ * TODO(cupcake-steps-source): there is no step source in this repo (no
+ * HealthKit / Health Connect / wearable bridge). `listSteps` is sample-only.
+ * TODO(cupcake-purchase-ledger): there is no purchase ledger (no Plaid or
+ * card feed); receipts are sample-only, and only `kind: "prepared"` receipts
+ * (ready-to-eat purchases) count toward calories eaten on the Today curve.
  * Everything the sample adapter returns is fabricated and labeled "Sample data"
  * in the UI (`adapter.kind === "sample"`).
  */
@@ -44,12 +51,38 @@ export type Receipt = {
   id: string;
   merchant: string;
   purchasedAt: number;
+  /**
+   * "prepared" = ready-to-eat (café, takeout): counts as eaten at purchase
+   * time on the Today curve. "grocery" (default) is pantry stock and does not.
+   */
+  kind?: "grocery" | "prepared";
   currency: string;
   total: number;
   items: ReceiptItem[];
 };
 
 export type TimeRange = { start: number; end: number };
+
+export type ExerciseEntry = {
+  id: string;
+  /** What Matt said or typed, verbatim. */
+  description: string;
+  /** Net kilocalories above resting (the baseline TDEE burn covers resting). */
+  kcal: number;
+  /** Minutes of work; the burn is spread over [performedAt − minutes, performedAt]. */
+  minutes: number;
+  /** Epoch milliseconds when the exercise finished. */
+  performedAt: number;
+  estimator: "local-met" | "model";
+  source: "quick-log";
+};
+
+export type ExerciseLogInput = Omit<ExerciseEntry, "id" | "source" | "performedAt"> & {
+  performedAt?: number;
+};
+
+/** Step count recorded inside [start, end). */
+export type StepBucket = { start: number; end: number; steps: number };
 
 export interface NutritionAdapter {
   /** "sample" adapters must be labeled as sample data wherever they render. */
@@ -61,6 +94,11 @@ export interface NutritionAdapter {
   /** The reading closest to 6:00 pm local on `day`, or null when none exists yet. */
   getSixPmGlucose(day: Date): Promise<GlucoseReading | null>;
   listReceipts(range: TimeRange): Promise<Receipt[]>;
+  listExercises(range: TimeRange): Promise<ExerciseEntry[]>;
+  logExercise(input: ExerciseLogInput): Promise<ExerciseEntry>;
+  /** Undo: resolves true when the entry existed and was removed. */
+  deleteExercise(id: string): Promise<boolean>;
+  listSteps(range: TimeRange): Promise<StepBucket[]>;
 }
 
 export const DEFAULT_TDEE_KCAL = 2200;
@@ -68,7 +106,11 @@ export const DEFAULT_CALORIE_TARGET_KCAL = 1800;
 
 const SAMPLE_STORAGE_KEY = "openclaw.control.cupcake.sampleNutrition.v1";
 
-type SampleState = { meals: MealEntry[]; targets?: Partial<NutritionTargets> };
+type SampleState = {
+  meals: MealEntry[];
+  exercises?: ExerciseEntry[];
+  targets?: Partial<NutritionTargets>;
+};
 
 /** Deterministic 0..1 noise so sample days look stable across reloads. */
 function seeded(seed: number): number {
@@ -121,6 +163,30 @@ export function sampleMealsForDay(dayStart: number, now: number): MealEntry[] {
   });
 }
 
+/**
+ * Fabricated hourly step counts for one local day, cut off at `now` (the
+ * current hour is prorated). Roughly 6–9k steps across 07:00–22:00.
+ */
+export function sampleStepsForDay(dayStart: number, now: number): StepBucket[] {
+  const key = dayKey(dayStart);
+  const buckets: StepBucket[] = [];
+  for (let hour = 7; hour < 22; hour += 1) {
+    const start = new Date(dayStart);
+    start.setHours(hour, 0, 0, 0);
+    const end = new Date(dayStart);
+    end.setHours(hour + 1, 0, 0, 0);
+    if (start.getTime() >= now) {
+      break;
+    }
+    // Busier around the commute, lunch and an evening walk.
+    const shape = hour === 8 || hour === 12 || hour === 18 ? 1100 : 380;
+    const full = Math.round(shape * (0.6 + seeded(key * 31 + hour) * 0.8));
+    const share = Math.min(1, (now - start.getTime()) / (end.getTime() - start.getTime()));
+    buckets.push({ start: start.getTime(), end: end.getTime(), steps: Math.round(full * share) });
+  }
+  return buckets;
+}
+
 function readState(storage: Storage | null): SampleState {
   try {
     const raw = storage?.getItem(SAMPLE_STORAGE_KEY);
@@ -134,7 +200,17 @@ function readState(storage: Storage | null): SampleState {
             Number.isFinite(meal.eatenAt),
         )
       : [];
-    return { meals, targets: parsed.targets };
+    const exercises = Array.isArray(parsed.exercises)
+      ? parsed.exercises.filter(
+          (entry): entry is ExerciseEntry =>
+            typeof entry?.id === "string" &&
+            typeof entry.description === "string" &&
+            Number.isFinite(entry.kcal) &&
+            Number.isFinite(entry.minutes) &&
+            Number.isFinite(entry.performedAt),
+        )
+      : [];
+    return { meals, exercises, targets: parsed.targets };
   } catch {
     return { meals: [] };
   }
@@ -222,6 +298,21 @@ export function createSampleNutritionAdapter(
     async listReceipts(range) {
       const current = now();
       const receipts: Receipt[] = [];
+      // One ready-to-eat café purchase this morning, so the Today curve shows
+      // how a purchase lands. Grocery receipts below are pantry stock.
+      const today = startOfLocalDay(current);
+      const cafeAt = today + 10 * 3_600_000 + Math.round(seeded(dayKey(today) * 3) * 40) * 60_000;
+      if (cafeAt >= range.start && cafeAt < range.end && cafeAt <= current) {
+        receipts.push({
+          id: `sample-cafe-${dayKey(today)}`,
+          merchant: "Blue Bottle Coffee",
+          purchasedAt: cafeAt,
+          kind: "prepared",
+          currency: "USD",
+          total: 6.25,
+          items: [{ name: "Oat milk latte", price: 6.25, calories: 190 }],
+        });
+      }
       const merchants = ["Whole Foods Market", "Trader Joe's", "Sweetgreen", "H-E-B"];
       for (let index = 0; index < 6; index += 1) {
         const purchasedAt = startOfLocalDay(current) - index * 2 * 86_400_000 + 17 * 3_600_000;
@@ -239,12 +330,55 @@ export function createSampleNutritionAdapter(
           id: `sample-receipt-${index}`,
           merchant: merchants[index % merchants.length] ?? "Grocery store",
           purchasedAt,
+          kind: merchants[index % merchants.length] === "Sweetgreen" ? "prepared" : "grocery",
           currency: "USD",
           total: Math.round(items.reduce((sum, item) => sum + item.price, 0) * 100) / 100,
           items,
         });
       }
-      return receipts;
+      return receipts.toSorted((a, b) => b.purchasedAt - a.purchasedAt);
+    },
+    async listExercises(range) {
+      return (readState(storage).exercises ?? [])
+        .filter((entry) => entry.performedAt >= range.start && entry.performedAt < range.end)
+        .toSorted((a, b) => a.performedAt - b.performedAt);
+    },
+    async logExercise(input) {
+      const state = readState(storage);
+      const exercises = state.exercises ?? [];
+      const entry: ExerciseEntry = {
+        id: `exercise-${now()}-${exercises.length}`,
+        description: input.description.trim(),
+        kcal: Math.max(0, Math.round(input.kcal)),
+        minutes: Math.max(0, input.minutes),
+        performedAt: input.performedAt ?? now(),
+        estimator: input.estimator,
+        source: "quick-log",
+      };
+      writeState(storage, { ...state, exercises: [...exercises, entry] });
+      return entry;
+    },
+    async deleteExercise(id) {
+      const state = readState(storage);
+      const exercises = state.exercises ?? [];
+      const next = exercises.filter((entry) => entry.id !== id);
+      if (next.length === exercises.length) {
+        return false;
+      }
+      writeState(storage, { ...state, exercises: next });
+      return true;
+    },
+    async listSteps(range) {
+      const current = now();
+      const buckets: StepBucket[] = [];
+      for (
+        let day = startOfLocalDay(range.start);
+        day < range.end && day <= current;
+        day = startOfLocalDay(day + 36 * 3_600_000)
+      ) {
+        buckets.push(...sampleStepsForDay(day, current));
+      }
+      return buckets.filter((bucket) => bucket.start >= range.start && bucket.start < range.end);
     },
   };
 }

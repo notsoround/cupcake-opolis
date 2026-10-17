@@ -10,6 +10,7 @@ import {
   APP_ROUTE_IDS,
   CONTROL_UI_DOCUMENT_ROUTE_PATHS,
   inferBasePathFromPathname,
+  isRootSessionDeepLink,
   memoryTabFromPath,
   pathForMemoryTab,
   pathForAgentPanel,
@@ -177,6 +178,57 @@ function createStartupContext(basePath = ""): ApplicationContext {
     ),
   } as unknown as ApplicationContext;
 }
+
+describe("Today root landing", () => {
+  it("routes the mount root to Today and keeps Chat at /chat", () => {
+    expect(pathForRoute("nutrition")).toBe("/");
+    expect(pathForRoute("nutrition", "/ui")).toBe("/ui/");
+    expect(pathForRoute("chat", "/ui")).toBe("/ui/chat");
+    expect(routeIdFromPath("/ui/", "/ui")).toBe("nutrition");
+    expect(inferBasePathFromPathname("/")).toBe("");
+    expect(inferBasePathFromPathname("/ui/")).toBe("/ui");
+  });
+
+  it("recognizes only root session deep links", () => {
+    const at = (pathname: string, search = "", hash = "") => ({ pathname, search, hash });
+    expect(isRootSessionDeepLink(at("/", "?session=agent%3Amain%3Amain"), "")).toBe(true);
+    expect(isRootSessionDeepLink(at("/", "", "#session=agent%3Amain%3Amain"), "")).toBe(true);
+    expect(isRootSessionDeepLink(at("/ui/", "?session=x"), "/ui")).toBe(true);
+    expect(isRootSessionDeepLink(at("/ui", "?session=x"), "/ui")).toBe(true);
+    expect(isRootSessionDeepLink(at("/"), "")).toBe(false);
+    expect(isRootSessionDeepLink(at("/today", "?session=x"), "")).toBe(false);
+    expect(isRootSessionDeepLink(at("/chat", "?session=x"), "")).toBe(false);
+  });
+
+  it("starts on Today at the root without rewriting it to Chat", async () => {
+    let location: RouteLocation = { pathname: "/", search: "", hash: "" };
+    const replace = vi.fn((next: RouteLocation) => {
+      location = next;
+    });
+    const history: RouterHistory = {
+      location: () => location,
+      push: vi.fn(),
+      replace,
+      listen: () => () => undefined,
+    };
+    const router = createApplicationRouter();
+    const route = router.getRoute("nutrition");
+    if (!route) {
+      throw new Error("Today route missing");
+    }
+    const originalComponent = route.component;
+    try {
+      route.component = async () => ({ render: () => null });
+      await startApplicationRouter(router, history, "", createStartupContext());
+      expect(replace).not.toHaveBeenCalled();
+      expect(location.pathname).toBe("/");
+      expect(router.getState().matches[0]?.routeId).toBe("nutrition");
+    } finally {
+      router.stop();
+      route.component = originalComponent;
+    }
+  });
+});
 
 describe("Dynamic route startup bridge", () => {
   it("defers a cold slug until hello and loads each tab at its real pathname", async () => {
@@ -453,7 +505,12 @@ describe("Dynamic route startup bridge", () => {
   );
 
   it("keeps a loader not-found state without rejecting startup", async () => {
-    let location: RouteLocation = { pathname: "/", search: "", hash: "" };
+    // A root session deep link predates the Today landing page and still opens Chat.
+    let location: RouteLocation = {
+      pathname: "/",
+      search: "?session=agent%3Amain%3Amissing",
+      hash: "",
+    };
     const history: RouterHistory = {
       location: () => location,
       push: vi.fn(),

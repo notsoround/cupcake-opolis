@@ -60,9 +60,12 @@ export type SidebarZoneEntry =
 
 // Keep the highest-value operational destinations visible on first use. Users
 // can still replace this route set through the customize menu.
-export const DEFAULT_SIDEBAR_ENTRIES = (
-  ["agents-home", "dashboards", "systems", "cron", "plugins"] as const
-).map((route) => serializeSidebarEntry({ type: "route", route }));
+export const DEFAULT_SIDEBAR_ENTRIES =
+  // Today (the root landing page) and Receipts lead so wide layouts without
+  // the phone tab bar can reach them on first use.
+  (
+    ["nutrition", "receipts", "agents-home", "dashboards", "systems", "cron", "plugins"] as const
+  ).map((route) => serializeSidebarEntry({ type: "route", route }));
 
 /**
  * Parse the compact persisted representation used by browser and synced prefs.
@@ -192,7 +195,10 @@ export function settingsSearchTextMatches(value: string, query: string): boolean
 // Management surfaces (sessions, worktrees, activity, memory import) are
 // workspace destinations, not settings; model setup is a subpage of Models.
 const SETTINGS_NAVIGATION_GROUPS = [
-  { labelKey: null, routes: ["custodian", "profile", "appearance", "notifications"] },
+  {
+    labelKey: null,
+    routes: ["custodian", "profile", "appearance", "nutrition-settings", "notifications"],
+  },
   { labelKey: "nav.settingsGroupDevice", routes: ["device", "device-permissions"] },
   {
     labelKey: "nav.settingsGroupConnections",
@@ -224,6 +230,7 @@ const SETTINGS_NAVIGATION_GROUPS = [
 const NON_ADMIN_SETTINGS_ROUTES: ReadonlySet<NavigationRouteId> = new Set([
   "profile",
   "appearance",
+  "nutrition-settings",
   "notifications",
   "connection",
   "channels",
@@ -387,6 +394,7 @@ const NAVIGATION_PRESENTATION: Record<NavigationRouteId, NavigationPresentation>
   "new-session": ["plus", "newSession.title", "newSession.hint"],
   nutrition: navigationPresentation("utensils", "nutrition"),
   receipts: navigationPresentation("receipt", "receipts"),
+  "nutrition-settings": navigationPresentation("utensils", "nutritionSettings"),
 };
 
 export function isSettingsNavigationRoute(routeId: NavigationRouteId): boolean {

@@ -159,6 +159,8 @@ describe("OpenClaw shell panel toggles", () => {
   });
 
   it("buffers panel toggle events until the active chat pane mounts", () => {
+    // The mount root is Today; the chat pane lives at /chat.
+    window.history.replaceState(null, "", "/chat");
     const terminalElement = createLazyElementSpec("session terminal panel");
     const shell = document.createElement("openclaw-app-shell") as unknown as ShellPanelToggleState;
     shell.terminalPanelElement = terminalElement;

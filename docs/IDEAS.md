@@ -25,3 +25,16 @@ A running list of product ideas for Cupcake, kept in the repo so they persist. N
 ## Security and protocol notes
 
 12. **MCP 2026 spec requirements.** OAuth 2.1 with audience-bound tokens, no token passthrough, third-party auth via URL elicitation, and tokens issued per person per client, read-scoped and expiring in days. Reference: the open-source quantified-self-mcp project (local-first health data, with private fields excluded from AI access).
+
+## Calls and context
+
+13. **Purchase-call context enrichment.** Before Cupcake makes a phone call triggered by a purchase detection, enrich the call prompt with a 24-hour summary of food intake (calories, macros, meal count from the food ledger) and spend (total from Plaid-linked transactions). If it doesn't add meaningful latency, also include a 7-day rollup of the same data. The call should feel informed: not just "you made a purchase" but "you made a purchase, here's what you've eaten and spent recently."
+
+    **Current state in cupcake-opolis** (checked by grepping `src/`, `extensions/`, `ui/`, `scripts/`, `skills/`):
+    - **Phone calls exist.** `extensions/voice-call/` is the outbound/inbound call plugin (Twilio, Telnyx, Plivo and mock providers in `extensions/voice-call/src/providers/`). Outbound calls start through `initiateCall()` in `extensions/voice-call/src/manager/outbound.ts`, exposed as the `initiate_call` tool, the `voicecall.initiate` Gateway method and `openclaw voicecall call --message`. The call's opening text is a single `message` string, and AI replies use the `responseSystemPrompt` config (`extensions/voice-call/src/config.ts`). There's no hook that adds context before a call. `skills/vapi-telephony.md` only documents a Vapi webhook pattern; it isn't wired-in code.
+    - **No purchase detection.** Nothing in the repo detects purchases or starts a call when one happens.
+    - **No food ledger.** The repo has no server-side food or meal ledger, so there's no pagination to reuse. The only meal data is the Control UI's labeled sample adapter (`ui/src/pages/nutrition/nutrition-adapter.ts`, `nutrition-source.ts`). It keeps sample, quick-logged and receipt meals in browser localStorage, and its documented future Gateway methods (`nutrition.meals.list { start, end }`, `nutrition.receipts.list`) aren't implemented. The real `nutritionApi.ts` / `nutritionModel.ts` aren't in this repo.
+    - **No Plaid integration.** The only match for "plaid" is the word in the session-slug word list (`src/agents/session-slug.ts`). The repo has no transaction fetching or caching, and `scripts/cupcake-metrics-cron.mjs` / `skills/metrics.md` track model API cost, not purchases.
+    - **Reachability and latency.** Neither ledger nor spend data is cached or reachable from the call pipeline today. The latency cost of a 7-day rollup (including any new pagination) can't be estimated from this repo, because the data sources live outside it.
+
+14. **FORGOTTEN IDEA.** Matt had a second idea for the idea box but couldn't remember it at the time. Fill this in when he remembers.

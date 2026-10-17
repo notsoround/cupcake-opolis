@@ -42,6 +42,11 @@ describe("mobile tab bar", () => {
       container.querySelector<HTMLAnchorElement>('[data-mobile-tab="chat"]')?.getAttribute("href"),
     ).toBe("/ui/chat");
     expect(nutrition?.getAttribute("aria-current")).toBe("page");
+    const settings = container.querySelector<HTMLAnchorElement>('[data-mobile-tab="settings"]');
+    expect(settings?.getAttribute("href")).toBe("/ui/settings/appearance");
+    expect(settings?.textContent?.trim()).toBe("Settings");
+    settings?.click();
+    expect(onNavigate).toHaveBeenCalledWith("appearance");
     container.querySelector<HTMLElement>('[data-mobile-tab="receipts"]')?.click();
     expect(onNavigate).toHaveBeenCalledWith("receipts");
     const more = container.querySelector<HTMLElement>('[data-mobile-tab="more"]');

@@ -158,6 +158,8 @@ describe("sidebar entries", () => {
   });
   it("keeps operational destinations visible by default", () => {
     expect(DEFAULT_SIDEBAR_ENTRIES).toEqual([
+      "route:nutrition",
+      "route:receipts",
       "route:agents-home",
       "route:dashboards",
       "route:systems",

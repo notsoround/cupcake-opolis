@@ -12,6 +12,14 @@
   padding-block-end: var(--space-6);
 }
 
+/* The phone shell gives routes almost no inline padding; keep cards off the
+   screen edge (and clear of rounded-corner displays). */
+@media (max-width: 768px) {
+  .cupcake-page {
+    padding-inline: var(--space-3);
+  }
+}
+
 .cupcake-sample-notice {
   display: flex;
   align-items: center;
@@ -346,6 +354,8 @@
   justify-content: space-between;
   gap: var(--space-1);
   width: 100%;
+  /* Fill the stretched grid row so wrapped labels keep cells even. */
+  height: 100%;
   min-height: 56px;
   padding: var(--space-2);
   border: 1px solid var(--border);
@@ -475,6 +485,17 @@
 }
 
 @media (max-width: 400px) {
+  /* Seven 4-digit kcal values must fit a 360px phone without touching the
+     cell edges. */
+  .cupcake-calendar__grid--week {
+    gap: var(--space-1);
+  }
+
+  .cupcake-calendar__grid--week .cupcake-calendar__cell {
+    padding: var(--space-1);
+  }
+
+  .cupcake-calendar__grid--week .cupcake-calendar__cell-value,
   .cupcake-calendar__grid--month .cupcake-calendar__cell-value {
     font-size: var(--control-ui-text-xs);
   }

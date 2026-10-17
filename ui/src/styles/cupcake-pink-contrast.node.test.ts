@@ -18,7 +18,8 @@ function block(selector: string): Map<string, string> {
   const body = baseCss.slice(start, baseCss.indexOf("\n}", start));
   const tokens = new Map<string, string>();
   for (const match of body.matchAll(/^\s*(--[\w-]+)\s*:\s*([^;]+);/gmu)) {
-    tokens.set(match[1], match[2].trim());
+    const [, name = "", value = ""] = match;
+    tokens.set(name, value.trim());
   }
   return tokens;
 }
@@ -28,16 +29,16 @@ function luminance(hex: string): number {
   if (!match) {
     throw new Error(`not a hex color: ${hex}`);
   }
-  const [r, g, b] = match.slice(1).map((part) => {
-    const channel = Number.parseInt(part, 16) / 255;
+  const linear = (part: string | undefined) => {
+    const channel = Number.parseInt(part ?? "0", 16) / 255;
     return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  return 0.2126 * linear(match[1]) + 0.7152 * linear(match[2]) + 0.0722 * linear(match[3]);
 }
 
 function contrast(a: string, b: string): number {
-  const [hi, lo] = [luminance(a), luminance(b)].toSorted((x, y) => y - x);
-  return (hi + 0.05) / (lo + 0.05);
+  const [left, right] = [luminance(a), luminance(b)];
+  return (Math.max(left, right) + 0.05) / (Math.min(left, right) + 0.05);
 }
 
 const root = block(":root");

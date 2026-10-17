@@ -107,11 +107,12 @@ class NutritionPage extends OpenClawLightDomElement {
     void this.loadCalendar();
   }
 
-  private async submitQuickLog(event: SubmitEvent) {
+  private readonly submitQuickLog = async (event: SubmitEvent) => {
     event.preventDefault();
     const form = event.currentTarget as HTMLFormElement;
     const data = new FormData(form);
-    const name = String(data.get("name") ?? "").trim();
+    const rawName = data.get("name");
+    const name = typeof rawName === "string" ? rawName.trim() : "";
     const calories = Number(data.get("calories"));
     if (!name || !Number.isFinite(calories) || calories <= 0) {
       this.quickLogStatus = t("cupcake.today.quickLogInvalid");
@@ -121,7 +122,7 @@ class NutritionPage extends OpenClawLightDomElement {
     form.reset();
     this.quickLogStatus = t("cupcake.today.quickLogged", { name: meal.name });
     await Promise.all([this.loadToday(), this.loadCalendar()]);
-  }
+  };
 
   private renderLastMeal() {
     const meal = this.lastMeal;

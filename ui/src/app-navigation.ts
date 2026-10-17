@@ -60,9 +60,12 @@ export type SidebarZoneEntry =
 
 // Keep the highest-value operational destinations visible on first use. Users
 // can still replace this route set through the customize menu.
-export const DEFAULT_SIDEBAR_ENTRIES = (
-  ["agents-home", "dashboards", "systems", "cron", "plugins"] as const
-).map((route) => serializeSidebarEntry({ type: "route", route }));
+export const DEFAULT_SIDEBAR_ENTRIES =
+  // Today (the root landing page) and Receipts lead so wide layouts without
+  // the phone tab bar can reach them on first use.
+  (
+    ["nutrition", "receipts", "agents-home", "dashboards", "systems", "cron", "plugins"] as const
+  ).map((route) => serializeSidebarEntry({ type: "route", route }));
 
 /**
  * Parse the compact persisted representation used by browser and synced prefs.

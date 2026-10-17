@@ -16,7 +16,9 @@ const MOBILE_TABS: ReadonlyArray<{ id: MobileTab; route: RouteId; icon: IconName
   { id: "chat", route: "chat", icon: "messageSquare" },
   { id: "nutrition", route: "nutrition", icon: "utensils" },
   { id: "receipts", route: "receipts", icon: "receipt" },
-  { id: "settings", route: "settings", icon: "settings" },
+  // The bare /settings route is the native-embed list page and redirects on the
+  // web, so the tab opens the same first page as the identity menu's Settings.
+  { id: "settings", route: "appearance", icon: "settings" },
 ];
 
 export function activeMobileTab(routeId: RouteId): MobileTab | null {
@@ -63,7 +65,9 @@ export function renderMobileTabBar(props: {
             }}
           >
             <span class="mobile-tab-bar__icon" aria-hidden="true">${icons[tab.icon]}</span>
-            <span class="mobile-tab-bar__label">${titleForRoute(tab.route)}</span>
+            <span class="mobile-tab-bar__label"
+              >${tab.id === "settings" ? t("nav.settings") : titleForRoute(tab.route)}</span
+            >
           </a>
         `,
       )}

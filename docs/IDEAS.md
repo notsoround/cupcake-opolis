@@ -38,3 +38,13 @@ A running list of product ideas for Cupcake, kept in the repo so they persist. N
     - **Reachability and latency.** Neither ledger nor spend data is cached or reachable from the call pipeline today. The latency cost of a 7-day rollup (including any new pagination) can't be estimated from this repo, because the data sources live outside it.
 
 14. **FORGOTTEN IDEA.** Matt had a second idea for the idea box but couldn't remember it at the time. Fill this in when he remembers.
+
+## Energy and activity
+
+15. **Live energy-balance curve.** One timeline that plots calories consumed against calories burned: steps, exercise, elapsed time, and the baseline burn of normal living. Matt can watch the line go up when he eats and come down when he moves, instead of reading a single deficit number. Cupcake checks in on walking, exercise and time as data points, and the curve reflects each one as it comes in, so the balance updates live through the day.
+
+16. **Quick-log exercise button on Today.** A single button on the Today screen. Matt taps it and describes what he did in plain words, by voice or by typing: push-ups, a plank and how long he held it, kettlebell rows, whatever it was. Cupcake estimates the calorie burn from that description and immediately drops the energy-balance curve (#15) to match. There's no structured form with sets, reps or pickers. He just talks or types, and the AI works out the number.
+
+    - **Metabolic balance curve (follow-up from Matt).** Frame #15 as a live metabolic balance curve: one animated line that rises on logged food and on food purchases, and falls with steps, exercise and the baseline burn of living. Take cues from Calorie Clock (a clock-face feel for the day, glass panels, a "prism" accent mode), without copying it. #16 becomes talk-to-log: one tap starts dictation, with a text field when the browser can't do speech, and every entry lands in a visible exercise feed on Today with its kcal, time and an undo.
+
+**Status:** #15 and #16 are in development on `feature/energy-balance-curve` (PR into `main`, stacked on PR #2). Steps and purchases are still sample data until real sources exist.

@@ -3,6 +3,7 @@ import {
   resolveThemeBranding,
 } from "../../../packages/gateway-protocol/src/theme.ts";
 import { registerListener } from "../../../src/shared/listeners.js";
+import { applyAccentHeat, subscribeAccentHeat } from "./accent-heat.ts";
 import type {
   ApplicationGateway,
   ApplicationTheme,
@@ -84,6 +85,7 @@ function applyThemePresentation(settings: UiPreferences, catalogTheme?: CatalogT
   applyChatFontSmoothing(typefaces.chat);
   syncCustomThemeStyleTag(catalogTheme?.palette ?? settings.customTheme);
   applyControlUiAccent(settings.accent);
+  applyAccentHeat();
   syncControlUiSystemChrome();
 }
 
@@ -231,6 +233,8 @@ export function createApplicationTheme(
     }
   };
   globalThis.addEventListener?.("storage", onStorage);
+  // Heat re-tints the accent; system chrome (theme-color meta) follows it.
+  const stopAccentHeat = subscribeAccentHeat(() => syncControlUiSystemChrome());
   const stopGateway = gateway.subscribe(() => {
     void loadCatalog();
     if (settings.gatewayUrl !== gateway.connection.gatewayUrl) {
@@ -290,6 +294,7 @@ export function createApplicationTheme(
       catalog?.dispose();
       stopPreferences();
       globalThis.removeEventListener?.("storage", onStorage);
+      stopAccentHeat();
       stopGateway();
       presentationGeneration += 1;
       detachSystemThemeListener();

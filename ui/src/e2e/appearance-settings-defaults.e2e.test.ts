@@ -449,7 +449,7 @@ suite.define(() => {
         remainingPrefs: { accent: "theme" },
       });
       await expect.poll(() => page.locator("html").getAttribute("data-theme")).toBe("dark");
-      await expect.poll(() => readAccentPresentation(page)).toMatchObject({ accent: "#ff5c5c" });
+      await expect.poll(() => readAccentPresentation(page)).toMatchObject({ accent: "#ff6b9d" });
       await expect.poll(() => readPersistedSettings(page)).toMatchObject({ accent: "theme" });
       await expect.poll(() => mintPreset.getAttribute("aria-pressed")).toBe("false");
 

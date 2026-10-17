@@ -64,6 +64,8 @@ export function connectShellViewport(): () => void {
     } else {
       root.style.removeProperty("--shell-safe-area-bottom");
     }
+    // The phone tab bar steps aside while the on-screen keyboard is up.
+    root.toggleAttribute("data-shell-keyboard-open", keyboard);
 
     // Publish a cap independently of keyboard detection: browser chrome and
     // standalone viewport-unit mismatches can hide less than 80px. CSS keeps
@@ -106,5 +108,6 @@ export function connectShellViewport(): () => void {
     }
     root.style.removeProperty("--shell-viewport-height");
     root.style.removeProperty("--shell-safe-area-bottom");
+    root.removeAttribute("data-shell-keyboard-open");
   };
 }

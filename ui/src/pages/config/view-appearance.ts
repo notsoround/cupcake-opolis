@@ -15,6 +15,7 @@ import {
   resolveTypefaces,
   TYPEFACES,
 } from "../../app/typography.ts";
+import "../../components/accent-heat-toggle.ts";
 import { icons } from "../../components/icons.ts";
 import { renderPicker } from "../../components/select-picker.ts";
 import {
@@ -534,6 +535,14 @@ export function renderAppearanceSection(props: ConfigProps) {
           }
           <span class="settings-accent-status__scope">${accentProvenance}</span>
         </p>
+        <div class="settings-group">
+          ${renderSettingsRow({
+            title: t("cupcake.heat.label"),
+            description: t("cupcake.heat.description"),
+            stackedOnNarrow: true,
+            control: html`<openclaw-accent-heat-toggle></openclaw-accent-heat-toggle>`,
+          })}
+        </div>
       </section>
 
       ${renderTypography(props, presentedTheme)}

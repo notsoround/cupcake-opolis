@@ -44,7 +44,7 @@
   --border-strong: #2e3040;
   --border-hover: #3e4050;
   --input: #1e2028;
-  --ring: #ff5c5c;
+  --ring: #ff6b9d;
 
   /* Shared rail chrome. Light and dark themes inherit their actual colors
      through --border/--accent while keeping one geometry contract. */
@@ -73,23 +73,45 @@
   --resize-handle-active-color: color-mix(in srgb, var(--text) 42%, transparent);
 
   /*
-   * Accent - Punchy signature red
+   * Cupcake pink scale (palette primitives). The live accent tokens below
+   * repeat these as literal hex because widget-theme.ts publishes --accent and
+   * friends to MCP app guest documents and the contrast tests parse literals.
+   *   calm  soft rose     #ff8fab  (calm-mode hover / lifted accent)
+   *   base  primary pink  #ff6b9d  (default accent)
+   *   hot   hot magenta   #ff2d6f  (hot-mode ring, glow and tint source)
+   *   hot-text            #ff3d7a  (#ff2d6f lifted for AA text: the raw
+   *                                 magenta is only 4.37:1 on --bg-hover)
+   *   deep / deeper / deepest  #d81b60 / #c2185b / #ad1457  (white-ink fills)
+   */
+  --cupcake-pink-calm: #ff8fab;
+  --cupcake-pink: #ff6b9d;
+  --cupcake-pink-hot: #ff2d6f;
+  --cupcake-pink-hot-text: #ff3d7a;
+  --cupcake-pink-deep: #d81b60;
+  --cupcake-pink-deeper: #c2185b;
+  --cupcake-pink-deepest: #ad1457;
+
+  /*
+   * Accent - Cupcake pink (calm mode; `data-accent-heat="hot"` below swaps in
+   * the magenta set for the claw family).
    *
    * WCAG 2.1 AA audit (bg = #0e1015, relative luminance ≈ 0.005):
-   *   --accent #ff5c5c on bg: 6.3:1 AA text ✓
-   *   --primary-foreground #ffffff on #d13c3c button: 4.75:1 AA ✓
-   *   --primary-foreground #ffffff on #c22e2e hover: 5.64:1 AA ✓
+   *   --accent #ff6b9d on bg: 7.11:1 AA text ✓ (6.57 on --card, 5.85 on --bg-hover)
+   *   --accent-hover #ff8fab on bg: 8.85:1 ✓
+   *   --accent-foreground #0e1015 on #ff6b9d: 7.11:1 ✓
+   *   --primary-foreground #ffffff on #d81b60 button: 4.95:1 AA ✓
+   *   --primary-foreground #ffffff on #c2185b hover: 5.87:1 AA ✓
    *   --destructive-foreground #fafafa on #d32f2f button: 4.77:1 AA ✓
    *   --destructive-foreground #fafafa on #bc2a2a hover: 5.74:1 AA ✓
    *   --card/--popover/--secondary foreground pairs: 15.4:1 / 14.9:1 / 15.4:1 ✓
    *   --selection-fg #ffffff on --selection-bg #005fcc: 6.0:1 AA ✓
    */
-  --accent: #ff5c5c;
-  --accent-hover: #ff7070;
-  --accent-muted: #ff5c5c;
-  --accent-subtle: rgba(255, 92, 92, 0.1);
+  --accent: #ff6b9d;
+  --accent-hover: #ff8fab;
+  --accent-muted: #ff6b9d;
+  --accent-subtle: rgba(255, 107, 157, 0.1);
   --accent-foreground: #0e1015;
-  --accent-glow: rgba(255, 92, 92, 0.2);
+  --accent-glow: rgba(255, 107, 157, 0.2);
   --inbox-attention: #e5243b;
   --inbox-attention-hover: color-mix(in srgb, var(--inbox-attention) 88%, black);
   --inbox-attention-foreground: #ffffff;
@@ -113,7 +135,7 @@
   --link-hover: color-mix(in srgb, var(--link) 82%, var(--text));
   --selection-bg: #005fcc;
   --selection-fg: #ffffff;
-  --primary: #d13c3c;
+  --primary: #d81b60;
   /* Imported palettes supply a fill/ink pair, not a hover pair. Keep their
      contrast intact; built-in palettes override with audited hover colors. */
   --primary-hover: var(--primary);
@@ -210,7 +232,7 @@
   --pr-merged: #a78bfa;
 
   /* Focus */
-  --focus: rgba(255, 92, 92, 0.2);
+  --focus: rgba(255, 107, 157, 0.2);
   --focus-ring: 0 0 0 2px var(--bg), 0 0 0 3px color-mix(in srgb, var(--ring) 80%, transparent);
   --focus-glow: 0 0 0 2px var(--bg), 0 0 0 3px var(--ring), 0 0 16px var(--accent-glow);
 
@@ -545,7 +567,7 @@
 
 /* The claw family deepens text-bearing primary and destructive fills. */
 :root[data-theme="dark"] {
-  --primary-hover: #c22e2e;
+  --primary-hover: #c2185b;
   --destructive: #d32f2f;
   --destructive-hover: #bc2a2a;
 }
@@ -554,15 +576,58 @@
   --primary-hover: var(--accent-hover);
 }
 
+/*
+ * Cupcake heat: calm (default, no attribute or `calm`) vs hot. The attribute is
+ * owned by app/accent-heat.ts (browser-local, localStorage) and only re-tints
+ * the claw family; named palettes keep their own audited accents, and a
+ * user/profile accent override (inline style) still wins over both.
+ *
+ * WCAG 2.1 AA audit, hot dark (bg #0e1015 / card #161920 / bg-hover #1f2330):
+ *   --accent #ff3d7a text: 5.62 / 5.19 / 4.62:1 ✓
+ *   --accent-hover #ff6b9d text: 7.11 / 6.57 / 5.85:1 ✓
+ *   --ring #ff2d6f as UI indicator: 5.31:1 on bg ✓ (≥3:1)
+ *   --accent-foreground #0e1015 on #ff3d7a: 5.62:1 ✓
+ *   --primary-foreground #ffffff on #c2185b: 5.87:1 ✓, on #ad1457 hover: 6.97:1 ✓
+ */
+:root[data-theme="dark"][data-accent-heat="hot"] {
+  --ring: #ff2d6f;
+  --accent: #ff3d7a;
+  --accent-hover: #ff6b9d;
+  --accent-muted: #ff3d7a;
+  --accent-subtle: rgba(255, 45, 111, 0.14);
+  --accent-glow: rgba(255, 45, 111, 0.32);
+  --primary: #c2185b;
+  --primary-hover: #ad1457;
+  --focus: rgba(255, 45, 111, 0.24);
+}
+
+/*
+ * Hot light (bg #faf9f7 / card #ffffff):
+ *   --accent #ad1457 text: 6.62 / 6.97:1 ✓, --accent-hover #8e0e44: 8.69:1 ✓
+ *   --primary-foreground #ffffff on #ad1457: 6.97:1 ✓
+ */
+:root[data-theme="light"][data-accent-heat="hot"] {
+  --ring: #ad1457;
+  --accent: #ad1457;
+  --accent-hover: #8e0e44;
+  --accent-muted: #ad1457;
+  --accent-subtle: rgba(173, 20, 87, 0.1);
+  --accent-glow: rgba(173, 20, 87, 0.18);
+  --primary: #ad1457;
+  --primary-hover: #8e0e44;
+  --focus: rgba(173, 20, 87, 0.18);
+}
+
 /* Light theme tokens apply to every light-mode family. */
 /* Defaults must lose to named palettes even when their link precedes the app CSS. */
 :root:where([data-theme-mode="light"]) {
   /*
-   * Warm paper light mode - terracotta accent on ivory
+   * Warm paper light mode - deep Cupcake pink accent on ivory
    *
    * WCAG 2.1 AA audit (bg = #faf9f7, relative luminance ≈ 0.941):
-   *   --accent #bd4531  contrast ≈ 4.9:1  AA text ✓
-   *   --primary-foreground #ffffff on #bd4531 button: 5.2:1 AA ✓
+   *   --accent #c2185b  contrast ≈ 5.58:1  AA text ✓ (5.87 on #ffffff card)
+   *   --accent-hover #ad1457  contrast ≈ 6.62:1 ✓
+   *   --primary-foreground #ffffff on #c2185b button: 5.87:1 AA ✓
    *   --text #403c35 ≈ 10.4:1 AAA ✓, --muted #6e6960 ≈ 5.2:1 AA ✓
    */
   --bg: #faf9f7;
@@ -603,15 +668,15 @@
   --border-strong: #d6d0c5;
   --border-hover: #b4ac9e;
   --input: #e8e4dc;
-  --ring: #bd4531;
+  --ring: #c2185b;
 
-  --accent: #bd4531;
-  --accent-hover: #a83c29;
-  --accent-muted: #bd4531;
-  --accent-subtle: rgba(189, 69, 49, 0.08);
+  --accent: #c2185b;
+  --accent-hover: #ad1457;
+  --accent-muted: #c2185b;
+  --accent-subtle: rgba(194, 24, 91, 0.08);
   --accent-foreground: #ffffff;
-  --accent-glow: rgba(189, 69, 49, 0.12);
-  --primary: #bd4531;
+  --accent-glow: rgba(194, 24, 91, 0.12);
+  --primary: #c2185b;
   --primary-foreground: #ffffff;
 
   /* Original lobster artwork reads well on light surfaces. */
@@ -674,7 +739,7 @@
   --info-subtle: rgba(29, 78, 216, 0.08);
   --pr-merged: #7c3aed;
 
-  --focus: rgba(189, 69, 49, 0.15);
+  --focus: rgba(194, 24, 91, 0.15);
   --focus-ring: 0 0 0 2px var(--bg), 0 0 0 3px color-mix(in srgb, var(--ring) 70%, transparent);
   --focus-glow: 0 0 0 2px var(--bg), 0 0 0 3px var(--ring), 0 0 12px var(--accent-glow);
 

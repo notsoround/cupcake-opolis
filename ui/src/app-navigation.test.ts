@@ -461,6 +461,8 @@ describe("SIDEBAR_NAV_ROUTES", () => {
       "plugins",
       "apps",
       "portals",
+      "nutrition",
+      "receipts",
     ]);
   });
 

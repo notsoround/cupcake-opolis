@@ -137,3 +137,45 @@ docs/superpowers
 
 # Deprecated changelog fragment workflow
 changelog/fragments/
+
+# ------------------------------------------------------------------
+# Cupcake: secrets & local data
+# Keep credentials, private keys, local databases, logs and
+# Cupcake runtime state out of the repo.
+# ------------------------------------------------------------------
+
+# Environment files (keep the committed templates)
+.env.*
+!.env.example
+
+# Private keys / certificates
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+
+# Credential / secret JSON blobs
+*secret*.json
+credentials*.json
+# Tracked upstream reference doc (not a secret) - keep it tracked
+!docs/reference/secretref-user-supplied-credentials-matrix.json
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# Logs
+*.log
+logs/
+# JSONL scoped to repo root + logs: docs/ and vendor/ track real .jsonl data
+/*.jsonl
+/logs/**/*.jsonl
+/data/**/*.jsonl
+
+# Cupcake local runtime state / config
+.cupcake/
+config/thread-routing.json

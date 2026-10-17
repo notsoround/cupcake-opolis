@@ -20,6 +20,15 @@ function fakeAdapter(kind: "sample" | "live", now: number): NutritionAdapter {
     setTargets: async (patch) => ({ calorieTarget: 1800, tdee: 2400, ...patch }),
     getSixPmGlucose: async () => ({ value: 104, unit: "mg/dL", takenAt: now }),
     listReceipts: async () => [],
+    listExercises: async () => [],
+    logExercise: vi.fn(async (input) => ({
+      ...input,
+      id: "x",
+      performedAt: input.performedAt ?? now,
+      source: "quick-log" as const,
+    })),
+    deleteExercise: async () => true,
+    listSteps: async () => [],
   };
 }
 

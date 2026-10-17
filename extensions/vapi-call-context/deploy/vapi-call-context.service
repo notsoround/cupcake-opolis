@@ -1,0 +1,38 @@
+# Example unit for the standalone server. NOT installed by anything in this repo.
+# Secrets arrive via LoadCredential (readable only by this service, never in env files,
+# workflow code, or git). Non-secret settings live in /etc/cupcake-vapi-call-context/env.
+[Unit]
+Description=Cupcake Vapi call-context server
+After=network-online.target cupcake-library.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+WorkingDirectory=/opt/cupcake-opolis
+EnvironmentFile=/etc/cupcake-vapi-call-context/env
+LoadCredential=vapi-webhook-secret:/etc/cupcake-vapi-call-context/vapi-webhook-secret
+LoadCredential=vapi-api-key:/etc/cupcake-vapi-call-context/vapi-api-key
+LoadCredential=cupcake-library-key:/etc/cupcake-recordings/access-key
+LoadCredential=plaid-client-id:/etc/cupcake-vapi-call-context/plaid-client-id
+LoadCredential=plaid-secret:/etc/cupcake-vapi-call-context/plaid-secret
+LoadCredential=plaid-access-token:/etc/cupcake-vapi-call-context/plaid-access-token
+ExecStart=/usr/bin/node --import ./scripts/tsx.mjs extensions/vapi-call-context/src/standalone.ts
+Restart=on-failure
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target
+
+# nginx (inside the automate.hales.ai server block):
+#   location = /vapi/call-context {
+#     proxy_pass http://127.0.0.1:8791;
+#     proxy_set_header X-Real-IP $remote_addr;
+#     client_max_body_size 512k;
+#   }

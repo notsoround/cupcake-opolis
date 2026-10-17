@@ -1,54 +1,35 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { resolveGatewayStartupMaintenanceConfig } from "./server-startup-plugins.js";
 
-const runStartupMatrixMigrationMock = vi.fn().mockResolvedValue(undefined);
+const repairedChannels = {
+  matrix: {
+    homeserver: "https://matrix.example.org",
+    userId: "@bot:example.org",
+    accessToken: "tok-123",
+  },
+};
 
-vi.mock("./server-startup-matrix-migration.js", () => ({
-  runStartupMatrixMigration: runStartupMatrixMigrationMock,
-}));
+describe("gateway startup channel maintenance wiring", () => {
+  it("uses channels supplied by startup recovery", () => {
+    const resolved = resolveGatewayStartupMaintenanceConfig({
+      cfgAtStart: { plugins: { enabled: true } },
+      startupRuntimeConfig: { plugins: { enabled: true }, channels: repairedChannels },
+    });
+    expect(resolved.channels).toEqual(repairedChannels);
+  });
 
-import {
-  getFreePort,
-  installGatewayTestHooks,
-  startGatewayServer,
-  testState,
-} from "./test-helpers.js";
-
-installGatewayTestHooks({ scope: "suite" });
-
-describe("gateway startup Matrix migration wiring", () => {
-  let server: Awaited<ReturnType<typeof startGatewayServer>> | undefined;
-
-  beforeAll(async () => {
-    testState.channelsConfig = {
+  it("preserves explicit startup channels", () => {
+    const channels = {
       matrix: {
-        homeserver: "https://matrix.example.org",
-        userId: "@bot:example.org",
-        accessToken: "tok-123",
+        homeserver: "https://matrix.original.example",
+        userId: "@original:example.org",
+        accessToken: "original-token",
       },
     };
-    server = await startGatewayServer(await getFreePort());
-  });
-
-  afterAll(async () => {
-    await server?.close();
-  });
-
-  it("runs startup Matrix migration with the resolved startup config", () => {
-    expect(runStartupMatrixMigrationMock).toHaveBeenCalledTimes(1);
-    expect(runStartupMatrixMigrationMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        cfg: expect.objectContaining({
-          channels: expect.objectContaining({
-            matrix: expect.objectContaining({
-              homeserver: "https://matrix.example.org",
-              userId: "@bot:example.org",
-              accessToken: "tok-123",
-            }),
-          }),
-        }),
-        env: process.env,
-        log: expect.anything(),
-      }),
-    );
+    const resolved = resolveGatewayStartupMaintenanceConfig({
+      cfgAtStart: { plugins: { enabled: true }, channels },
+      startupRuntimeConfig: { plugins: { enabled: true }, channels: repairedChannels },
+    });
+    expect(resolved.channels).toEqual(channels);
   });
 });

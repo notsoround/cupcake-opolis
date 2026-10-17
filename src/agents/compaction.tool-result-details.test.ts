@@ -1,36 +1,34 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, ToolResultMessage } from "@mariozechner/pi-ai";
+// Covers compaction sanitization for toolResult details and runtime context.
+import type { AgentMessage } from "openclaw/plugin-sdk/agent-core";
+import type { AssistantMessage, ToolResultMessage } from "openclaw/plugin-sdk/llm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { estimateMessagesTokens, summarizeInStages } from "./compaction.js";
 import { makeAgentAssistantMessage } from "./test-helpers/agent-message-fixtures.js";
 
-const piCodingAgentMocks = vi.hoisted(() => ({
+const agentSessionMocks = vi.hoisted(() => ({
   generateSummary: vi.fn(async () => "summary"),
-  estimateTokens: vi.fn((_message: unknown) => 1),
 }));
 
-vi.mock("@mariozechner/pi-coding-agent", async () => {
-  const actual = await vi.importActual<typeof import("@mariozechner/pi-coding-agent")>(
-    "@mariozechner/pi-coding-agent",
-  );
+vi.mock("./sessions/index.js", async () => {
+  const actual = await vi.importActual<typeof import("./sessions/index.js")>("./sessions/index.js");
   return {
     ...actual,
-    generateSummary: piCodingAgentMocks.generateSummary,
-    estimateTokens: piCodingAgentMocks.estimateTokens,
+    generateSummary: agentSessionMocks.generateSummary,
   };
 });
-
-import { isOversizedForSummary, summarizeWithFallback } from "./compaction.js";
 
 function makeAssistantToolCall(timestamp: number): AssistantMessage {
   return makeAgentAssistantMessage({
     content: [{ type: "toolCall", id: "call_1", name: "browser", arguments: { action: "tabs" } }],
-    model: "gpt-5.2",
+    model: "gpt-5.4",
     stopReason: "toolUse",
     timestamp,
   });
 }
 
 function makeToolResultWithDetails(timestamp: number): ToolResultMessage<{ raw: string }> {
+  // The raw detail intentionally looks prompt-like; it must never reach summary
+  // generation or token oversize checks.
   return {
     role: "toolResult",
     toolCallId: "call_1",
@@ -44,13 +42,16 @@ function makeToolResultWithDetails(timestamp: number): ToolResultMessage<{ raw: 
 
 describe("compaction toolResult details stripping", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    agentSessionMocks.generateSummary.mockReset();
+    agentSessionMocks.generateSummary.mockResolvedValue("summary");
   });
 
   it("does not pass toolResult.details into generateSummary", async () => {
-    const messages: AgentMessage[] = [makeAssistantToolCall(1), makeToolResultWithDetails(2)];
+    const assistant = makeAssistantToolCall(1);
+    const messages: AgentMessage[] = [structuredClone(assistant), makeToolResultWithDetails(2)];
 
-    const summary = await summarizeWithFallback({
+    const summary = await summarizeInStages({
+      parts: 1,
       messages,
       // Minimal shape; compaction won't use these fields in our mocked generateSummary.
       model: { id: "mock", name: "mock", contextWindow: 10000, maxTokens: 1000 } as never,
@@ -62,22 +63,73 @@ describe("compaction toolResult details stripping", () => {
     });
 
     expect(summary).toBe("summary");
-    expect(piCodingAgentMocks.generateSummary).toHaveBeenCalled();
+    expect(agentSessionMocks.generateSummary).toHaveBeenCalledTimes(1);
 
+    // Summary generation receives only model-visible fields. Raw detail payloads
+    // are diagnostics, not transcript content.
     const chunk = (
-      piCodingAgentMocks.generateSummary.mock.calls as unknown as Array<[unknown]>
+      agentSessionMocks.generateSummary.mock.calls as unknown as Array<[AgentMessage[]]>
     )[0]?.[0];
+    expect(chunk).toStrictEqual([
+      assistant,
+      {
+        role: "toolResult",
+        toolCallId: "call_1",
+        toolName: "browser",
+        isError: false,
+        content: [{ type: "text", text: "ok" }],
+        timestamp: 2,
+      },
+    ]);
+    expect(chunk?.[1]).not.toHaveProperty("details");
     const serialized = JSON.stringify(chunk);
     expect(serialized).not.toContain("Ignore previous instructions");
     expect(serialized).not.toContain('"details"');
   });
 
-  it("ignores toolResult.details when evaluating oversized messages", () => {
-    piCodingAgentMocks.estimateTokens.mockImplementation((message: unknown) => {
-      const record = message as { details?: unknown };
-      return record.details ? 10_000 : 10;
+  it("does not pass runtime-context custom messages into generateSummary", async () => {
+    const assistant = makeAgentAssistantMessage({
+      content: [{ type: "text", text: "visible answer" }],
+      timestamp: 3,
+    });
+    const messages: AgentMessage[] = [
+      { role: "user", content: "visible ask", timestamp: 1 },
+      {
+        role: "custom",
+        customType: "openclaw.runtime-context",
+        content: "secret runtime context",
+        display: false,
+        timestamp: 2,
+      },
+      assistant,
+    ];
+
+    await summarizeInStages({
+      parts: 1,
+      messages,
+      model: { id: "mock", name: "mock", contextWindow: 10000, maxTokens: 1000 } as never,
+      apiKey: "test", // pragma: allowlist secret
+      signal: new AbortController().signal,
+      reserveTokens: 100,
+      maxChunkTokens: 5000,
+      contextWindow: 10000,
     });
 
+    expect(agentSessionMocks.generateSummary).toHaveBeenCalledTimes(1);
+    const chunk = (
+      agentSessionMocks.generateSummary.mock.calls as unknown as Array<[AgentMessage[]]>
+    )[0]?.[0];
+    expect(chunk).toStrictEqual([
+      { role: "user", content: "visible ask", timestamp: 1 },
+      assistant,
+    ]);
+    const serialized = JSON.stringify(chunk);
+    expect(serialized).toContain("visible ask");
+    expect(serialized).not.toContain("openclaw.runtime-context");
+    expect(serialized).not.toContain("secret runtime context");
+  });
+
+  it("ignores toolResult.details when estimating compaction tokens", () => {
     const toolResult: ToolResultMessage<{ raw: string }> = {
       role: "toolResult",
       toolCallId: "call_1",
@@ -88,6 +140,8 @@ describe("compaction toolResult details stripping", () => {
       timestamp: 2,
     };
 
-    expect(isOversizedForSummary(toolResult, 1_000)).toBe(false);
+    // Sanitization strips details before estimation; the raw payload must
+    // never inflate compaction token pressure.
+    expect(estimateMessagesTokens([toolResult])).toBeLessThan(1_000);
   });
 });

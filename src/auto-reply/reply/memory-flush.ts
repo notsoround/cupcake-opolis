@@ -1,177 +1,133 @@
-import crypto from "node:crypto";
-import { lookupContextTokens } from "../../agents/context.js";
-import { resolveCronStyleNow } from "../../agents/current-time.js";
-import { DEFAULT_CONTEXT_TOKENS } from "../../agents/defaults.js";
-import { DEFAULT_PI_COMPACTION_RESERVE_TOKENS_FLOOR } from "../../agents/pi-settings.js";
+// Builds memory flush prompts when conversation context exceeds model budget.
+import { resolveAnthropicServerCompactionPlan } from "@openclaw/ai/internal/anthropic";
+import { resolveOpenAIResponsesServerCompactionPlan } from "@openclaw/ai/internal/openai-responses-payload-policy";
+import { asPositiveFiniteNumber } from "@openclaw/normalization-core/number-coercion";
+import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import { estimateMessagesTokens } from "../../agents/compaction.js";
+import { resolveModelExtraParamSources } from "../../agents/model-extra-params.js";
+import { normalizeStaticProviderModelId } from "../../agents/model-ref-shared.js";
+import { normalizeProviderId } from "../../agents/model-selection.js";
+import type { AgentMessage } from "../../agents/runtime/index.js";
 import { parseNonNegativeByteSize } from "../../config/byte-size.js";
-import type { OpenClawConfig } from "../../config/config.js";
+import {
+  findConfiguredProviderModel,
+  resolveMergedModelProviderConfig,
+} from "../../config/model-provider-config.js";
 import { resolveFreshSessionTotalTokens, type SessionEntry } from "../../config/sessions.js";
-import { SILENT_REPLY_TOKEN } from "../tokens.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
 
-export const DEFAULT_MEMORY_FLUSH_SOFT_TOKENS = 4000;
-export const DEFAULT_MEMORY_FLUSH_FORCE_TRANSCRIPT_BYTES = 2 * 1024 * 1024;
-
-const MEMORY_FLUSH_TARGET_HINT =
-  "Store durable memories only in memory/YYYY-MM-DD.md (create memory/ if needed).";
-const MEMORY_FLUSH_APPEND_ONLY_HINT =
-  "If memory/YYYY-MM-DD.md already exists, APPEND new content only and do not overwrite existing entries.";
-const MEMORY_FLUSH_READ_ONLY_HINT =
-  "Treat workspace bootstrap/reference files such as MEMORY.md, SOUL.md, TOOLS.md, and AGENTS.md as read-only during this flush; never overwrite, replace, or edit them.";
-const MEMORY_FLUSH_REQUIRED_HINTS = [
-  MEMORY_FLUSH_TARGET_HINT,
-  MEMORY_FLUSH_APPEND_ONLY_HINT,
-  MEMORY_FLUSH_READ_ONLY_HINT,
-];
-
-export const DEFAULT_MEMORY_FLUSH_PROMPT = [
-  "Pre-compaction memory flush.",
-  MEMORY_FLUSH_TARGET_HINT,
-  MEMORY_FLUSH_READ_ONLY_HINT,
-  MEMORY_FLUSH_APPEND_ONLY_HINT,
-  "Do NOT create timestamped variant files (e.g., YYYY-MM-DD-HHMM.md); always use the canonical YYYY-MM-DD.md filename.",
-  `If nothing to store, reply with ${SILENT_REPLY_TOKEN}.`,
-].join(" ");
-
-export const DEFAULT_MEMORY_FLUSH_SYSTEM_PROMPT = [
-  "Pre-compaction memory flush turn.",
-  "The session is near auto-compaction; capture durable memories to disk.",
-  MEMORY_FLUSH_TARGET_HINT,
-  MEMORY_FLUSH_READ_ONLY_HINT,
-  MEMORY_FLUSH_APPEND_ONLY_HINT,
-  `You may reply, but usually ${SILENT_REPLY_TOKEN} is correct.`,
-].join(" ");
-
-function formatDateStampInTimezone(nowMs: number, timezone: string): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date(nowMs));
-  const year = parts.find((part) => part.type === "year")?.value;
-  const month = parts.find((part) => part.type === "month")?.value;
-  const day = parts.find((part) => part.type === "day")?.value;
-  if (year && month && day) {
-    return `${year}-${month}-${day}`;
-  }
-  return new Date(nowMs).toISOString().slice(0, 10);
+export function resolveMaxActiveTranscriptBytes(cfg?: OpenClawConfig): number | undefined {
+  const parsed = parseNonNegativeByteSize(
+    cfg?.agents?.defaults?.compaction?.maxActiveTranscriptBytes,
+  );
+  return typeof parsed === "number" && parsed > 0 ? parsed : undefined;
 }
 
-export function resolveMemoryFlushRelativePathForRun(params: {
-  cfg?: OpenClawConfig;
-  nowMs?: number;
-}): string {
-  const nowMs = Number.isFinite(params.nowMs) ? (params.nowMs as number) : Date.now();
-  const { userTimezone } = resolveCronStyleNow(params.cfg ?? {}, nowMs);
-  const dateStamp = formatDateStampInTimezone(nowMs, userTimezone);
-  return `memory/${dateStamp}.md`;
+function resolvePositiveTokenCount(value: number | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : undefined;
 }
 
-export function resolveMemoryFlushPromptForRun(params: {
-  prompt: string;
-  cfg?: OpenClawConfig;
-  nowMs?: number;
-}): string {
-  const nowMs = Number.isFinite(params.nowMs) ? (params.nowMs as number) : Date.now();
-  const { timeLine } = resolveCronStyleNow(params.cfg ?? {}, nowMs);
-  const dateStamp = resolveMemoryFlushRelativePathForRun({
-    cfg: params.cfg,
-    nowMs,
-  })
-    .replace(/^memory\//, "")
-    .replace(/\.md$/, "");
-  const withDate = params.prompt.replaceAll("YYYY-MM-DD", dateStamp).trimEnd();
-  if (!withDate) {
-    return timeLine;
-  }
-  if (withDate.includes("Current time:")) {
-    return withDate;
-  }
-  return `${withDate}\n${timeLine}`;
+export function resolveEffectivePromptTokens(
+  basePromptTokens?: number,
+  lastOutputTokens?: number,
+  promptTokenEstimate?: number,
+): number {
+  const base = Math.max(0, basePromptTokens ?? 0);
+  const output = Math.max(0, lastOutputTokens ?? 0);
+  const estimate = Math.max(0, promptTokenEstimate ?? 0);
+  // Flush gating projects the next input context by adding the previous
+  // completion and the current user prompt estimate.
+  return base + output + estimate;
 }
 
-export type MemoryFlushSettings = {
-  enabled: boolean;
-  softThresholdTokens: number;
-  /**
-   * Force a pre-compaction memory flush when the session transcript reaches this
-   * size. Set to 0 to disable byte-size based triggering.
-   */
-  forceFlushTranscriptBytes: number;
-  prompt: string;
-  systemPrompt: string;
+export function estimatePromptTokensForMemoryFlush(prompt?: string): number | undefined {
+  const trimmed = normalizeOptionalString(prompt);
+  if (!trimmed) {
+    return undefined;
+  }
+  const message: AgentMessage = { role: "user", content: trimmed, timestamp: Date.now() };
+  const tokens = asPositiveFiniteNumber(estimateMessagesTokens([message]));
+  return tokens === undefined ? undefined : Math.ceil(tokens);
+}
+
+/** Resolves the blocking threshold using the selected reserve and server floor. */
+export function resolveCompactionThreshold(params: {
+  contextWindowTokens: number;
   reserveTokensFloor: number;
-};
-
-const normalizeNonNegativeInt = (value: unknown): number | null => {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return null;
-  }
-  const int = Math.floor(value);
-  return int >= 0 ? int : null;
-};
-
-export function resolveMemoryFlushSettings(cfg?: OpenClawConfig): MemoryFlushSettings | null {
-  const defaults = cfg?.agents?.defaults?.compaction?.memoryFlush;
-  const enabled = defaults?.enabled ?? true;
-  if (!enabled) {
-    return null;
-  }
-  const softThresholdTokens =
-    normalizeNonNegativeInt(defaults?.softThresholdTokens) ?? DEFAULT_MEMORY_FLUSH_SOFT_TOKENS;
-  const forceFlushTranscriptBytes =
-    parseNonNegativeByteSize(defaults?.forceFlushTranscriptBytes) ??
-    DEFAULT_MEMORY_FLUSH_FORCE_TRANSCRIPT_BYTES;
-  const prompt = ensureMemoryFlushSafetyHints(
-    defaults?.prompt?.trim() || DEFAULT_MEMORY_FLUSH_PROMPT,
-  );
-  const systemPrompt = ensureMemoryFlushSafetyHints(
-    defaults?.systemPrompt?.trim() || DEFAULT_MEMORY_FLUSH_SYSTEM_PROMPT,
-  );
-  const reserveTokensFloor =
-    normalizeNonNegativeInt(cfg?.agents?.defaults?.compaction?.reserveTokensFloor) ??
-    DEFAULT_PI_COMPACTION_RESERVE_TOKENS_FLOOR;
-
-  return {
-    enabled,
-    softThresholdTokens,
-    forceFlushTranscriptBytes,
-    prompt: ensureNoReplyHint(prompt),
-    systemPrompt: ensureNoReplyHint(systemPrompt),
-    reserveTokensFloor,
-  };
-}
-
-function ensureNoReplyHint(text: string): string {
-  if (text.includes(SILENT_REPLY_TOKEN)) {
-    return text;
-  }
-  return `${text}\n\nIf no user-visible reply is needed, start with ${SILENT_REPLY_TOKEN}.`;
-}
-
-function ensureMemoryFlushSafetyHints(text: string): string {
-  let next = text.trim();
-  for (const hint of MEMORY_FLUSH_REQUIRED_HINTS) {
-    if (!next.includes(hint)) {
-      next = next ? `${next}\n\n${hint}` : hint;
-    }
-  }
-  return next;
-}
-
-export function resolveMemoryFlushContextWindowTokens(params: {
-  modelId?: string;
-  agentCfgContextTokens?: number;
+  minimumThresholdTokens?: number;
 }): number {
-  return (
-    lookupContextTokens(params.modelId) ?? params.agentCfgContextTokens ?? DEFAULT_CONTEXT_TOKENS
+  const contextWindow = Math.max(1, Math.floor(params.contextWindowTokens));
+  const reserveTokens = Math.max(0, Math.floor(params.reserveTokensFloor));
+  return Math.max(0, contextWindow - reserveTokens, Math.floor(params.minimumThresholdTokens ?? 0));
+}
+
+export function resolveResponsesServerCompactionThreshold(params: {
+  contextWindowTokens: number;
+  cfg?: OpenClawConfig;
+  provider?: string;
+  modelId?: string;
+}): number | undefined {
+  const provider = params.provider?.trim();
+  const modelId = params.modelId?.trim();
+  if (!provider || !modelId) {
+    return undefined;
+  }
+  const normalizedProvider = normalizeProviderId(provider);
+  const normalizeModelId = (value: string) =>
+    normalizeStaticProviderModelId(normalizedProvider, value).trim().toLowerCase();
+  const providerConfig = resolveMergedModelProviderConfig(params.cfg, provider);
+  const configuredModel = findConfiguredProviderModel(
+    providerConfig,
+    provider,
+    modelId,
+    normalizeModelId,
   );
+  const { defaultParams, modelParams } = resolveModelExtraParamSources({
+    config: params.cfg,
+    provider,
+    modelId,
+  });
+  const extraParams = { ...defaultParams, ...modelParams };
+  if (normalizedProvider === "anthropic") {
+    // The default Anthropic trigger sits below the local threshold, so only an explicit opt-in
+    // (which may target any Claude model or a raised trigger) needs local compaction held back.
+    if (extraParams.anthropicServerCompaction !== true) {
+      return undefined;
+    }
+    return resolveAnthropicServerCompactionPlan(
+      {
+        provider,
+        api: configuredModel?.api ?? providerConfig?.api ?? "anthropic-messages",
+        baseUrl: configuredModel?.baseUrl ?? providerConfig?.baseUrl,
+        contextWindow: configuredModel?.contextWindow ?? params.contextWindowTokens,
+      },
+      extraParams,
+    ).threshold;
+  }
+  const defaultOpenAIBaseUrl =
+    normalizedProvider === "openai" ? "https://api.openai.com/v1" : undefined;
+  return resolveOpenAIResponsesServerCompactionPlan(
+    {
+      provider,
+      api:
+        configuredModel?.api ??
+        providerConfig?.api ??
+        (normalizedProvider === "openai" ? "openai-responses" : undefined),
+      baseUrl: configuredModel?.baseUrl ?? providerConfig?.baseUrl ?? defaultOpenAIBaseUrl,
+      compat: configuredModel?.compat,
+      contextTokens: configuredModel?.contextTokens ?? params.contextWindowTokens,
+      contextWindow: configuredModel?.contextWindow ?? params.contextWindowTokens,
+    },
+    extraParams,
+  ).threshold;
 }
 
 export function shouldRunMemoryFlush(params: {
   entry?: Pick<
     SessionEntry,
-    "totalTokens" | "totalTokensFresh" | "compactionCount" | "memoryFlushCompactionCount"
+    "totalTokens" | "totalTokensFresh" | "totalTokensVersion" | "compactionCount" | "memoryFlush"
   >;
   /**
    * Optional token count override for flush gating. When provided, this value is
@@ -179,40 +135,36 @@ export function shouldRunMemoryFlush(params: {
    * SessionEntry.totalTokens (which may be stale/unknown).
    */
   tokenCount?: number;
-  contextWindowTokens: number;
-  reserveTokensFloor: number;
-  softThresholdTokens: number;
+  threshold: number;
+}): boolean {
+  return Boolean(
+    shouldRunPreflightCompaction(params) &&
+    params.entry &&
+    !hasAlreadyFlushedForCurrentCompaction(params.entry),
+  );
+}
+
+export function shouldRunPreflightCompaction(params: {
+  entry?: Pick<SessionEntry, "totalTokens" | "totalTokensFresh" | "totalTokensVersion">;
+  /**
+   * Optional projected token count override for pre-run compaction gating.
+   * When provided, this value is treated as a fresh estimate and used instead
+   * of any cached SessionEntry total.
+   */
+  tokenCount?: number;
+  threshold: number;
 }): boolean {
   if (!params.entry) {
     return false;
   }
-
-  const override = params.tokenCount;
-  const overrideTokens =
-    typeof override === "number" && Number.isFinite(override) && override > 0
-      ? Math.floor(override)
-      : undefined;
-
-  const totalTokens = overrideTokens ?? resolveFreshSessionTotalTokens(params.entry);
-  if (!totalTokens || totalTokens <= 0) {
-    return false;
-  }
-  const contextWindow = Math.max(1, Math.floor(params.contextWindowTokens));
-  const reserveTokens = Math.max(0, Math.floor(params.reserveTokensFloor));
-  const softThreshold = Math.max(0, Math.floor(params.softThresholdTokens));
-  const threshold = Math.max(0, contextWindow - reserveTokens - softThreshold);
-  if (threshold <= 0) {
-    return false;
-  }
-  if (totalTokens < threshold) {
-    return false;
-  }
-
-  if (hasAlreadyFlushedForCurrentCompaction(params.entry)) {
-    return false;
-  }
-
-  return true;
+  const totalTokens =
+    resolvePositiveTokenCount(params.tokenCount) ?? resolveFreshSessionTotalTokens(params.entry);
+  return (
+    typeof totalTokens === "number" &&
+    totalTokens > 0 &&
+    params.threshold > 0 &&
+    totalTokens >= params.threshold
+  );
 }
 
 /**
@@ -221,26 +173,9 @@ export function shouldRunMemoryFlush(params: {
  * important for both the token-based and transcript-size–based trigger paths.
  */
 export function hasAlreadyFlushedForCurrentCompaction(
-  entry: Pick<SessionEntry, "compactionCount" | "memoryFlushCompactionCount">,
+  entry: Pick<SessionEntry, "compactionCount" | "memoryFlush">,
 ): boolean {
   const compactionCount = entry.compactionCount ?? 0;
-  const lastFlushAt = entry.memoryFlushCompactionCount;
+  const lastFlushAt = entry.memoryFlush?.compactionCount;
   return typeof lastFlushAt === "number" && lastFlushAt === compactionCount;
-}
-
-/**
- * Compute a lightweight content hash from the tail of a session transcript.
- * Used for state-based flush deduplication — if the hash hasn't changed since
- * the last flush, the context is effectively the same and flushing again would
- * produce duplicate memory entries.
- *
- * Hash input: `messages.length` + content of the last 3 user/assistant messages.
- * Algorithm: SHA-256 truncated to 16 hex chars (collision-resistant enough for dedup).
- */
-export function computeContextHash(messages: Array<{ role?: string; content?: unknown }>): string {
-  const userAssistant = messages.filter((m) => m.role === "user" || m.role === "assistant");
-  const tail = userAssistant.slice(-3);
-  const payload = `${messages.length}:${tail.map((m, i) => `[${i}:${m.role ?? ""}]${typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "")}`).join("\x00")}`;
-  const hash = crypto.createHash("sha256").update(payload).digest("hex");
-  return hash.slice(0, 16);
 }

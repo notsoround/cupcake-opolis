@@ -1,166 +1,121 @@
 import { ChannelType } from "discord-api-types/v10";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../../../../src/config/config.js";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { RequestClient } from "../internal/rest.js";
+import * as discordRequestClient from "../proxy-request-client.js";
+import * as discordSend from "../send.js";
+import { createDiscordSendReceipt } from "../send.receipt.js";
+import {
+  isDiscordThreadGoneError,
+  maybeSendBindingMessage,
+  resolveChannelIdForBinding,
+} from "./thread-bindings.discord-api.js";
+import { resolveThreadBindingPersona } from "./thread-bindings.persona.js";
 import type { ThreadBindingRecord } from "./thread-bindings.types.js";
 
-const hoisted = vi.hoisted(() => {
-  const restGet = vi.fn();
-  const sendMessageDiscord = vi.fn();
-  const sendWebhookMessageDiscord = vi.fn();
-  const createDiscordRestClient = vi.fn(() => ({
-    rest: {
-      get: restGet,
+const cfg = { channels: { discord: { token: "synthetic-token" } } };
+const record: ThreadBindingRecord = {
+  accountId: "default",
+  channelId: "parent-1",
+  threadId: "thread-1",
+  targetKind: "subagent",
+  targetSessionKey: "agent:main:subagent:test",
+  agentId: "main",
+  boundBy: "test",
+  boundAt: 1,
+  lastActivityAt: 1,
+};
+const sent = {
+  messageId: "msg-1",
+  channelId: "thread-1",
+  receipt: createDiscordSendReceipt({
+    platformMessageIds: ["msg-1"],
+    channelId: "thread-1",
+    kind: "text",
+  }),
+};
+function fixture() {
+  const rest = new RequestClient("synthetic-token", {
+    fetch: async () => {
+      throw new Error("Unexpected network request");
     },
-  }));
+  });
+  vi.spyOn(discordRequestClient, "createDiscordRequestClient").mockReturnValue(rest);
   return {
-    restGet,
-    sendMessageDiscord,
-    sendWebhookMessageDiscord,
-    createDiscordRestClient,
+    get: vi.spyOn(rest, "get"),
+    bot: vi.spyOn(discordSend, "sendMessageDiscord").mockResolvedValue(sent),
+    webhook: vi.spyOn(discordSend, "sendWebhookMessageDiscord").mockResolvedValue(sent),
   };
+}
+let mocks: ReturnType<typeof fixture>;
+beforeEach(() => {
+  mocks = fixture();
+});
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
-vi.mock("../client.js", () => ({
-  createDiscordRestClient: hoisted.createDiscordRestClient,
-}));
-
-vi.mock("../send.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../send.js")>();
-  return {
-    ...actual,
-    addRoleDiscord: vi.fn(),
-    sendMessageDiscord: (...args: unknown[]) => hoisted.sendMessageDiscord(...args),
-    sendWebhookMessageDiscord: (...args: unknown[]) => hoisted.sendWebhookMessageDiscord(...args),
-  };
-});
-
-const { maybeSendBindingMessage, resolveChannelIdForBinding } =
-  await import("./thread-bindings.discord-api.js");
-
-describe("resolveChannelIdForBinding", () => {
-  beforeEach(() => {
-    hoisted.restGet.mockClear();
-    hoisted.createDiscordRestClient.mockClear();
-    hoisted.sendMessageDiscord.mockClear().mockResolvedValue({});
-    hoisted.sendWebhookMessageDiscord.mockClear().mockResolvedValue({});
-  });
-
-  it("returns explicit channelId without resolving route", async () => {
-    const resolved = await resolveChannelIdForBinding({
-      accountId: "default",
-      threadId: "thread-1",
-      channelId: "channel-explicit",
-    });
-
-    expect(resolved).toBe("channel-explicit");
-    expect(hoisted.createDiscordRestClient).not.toHaveBeenCalled();
-    expect(hoisted.restGet).not.toHaveBeenCalled();
-  });
-
-  it("returns parent channel for thread channels", async () => {
-    hoisted.restGet.mockResolvedValueOnce({
-      id: "thread-1",
-      type: ChannelType.PublicThread,
-      parent_id: "channel-parent",
-    });
-
-    const resolved = await resolveChannelIdForBinding({
-      accountId: "default",
-      threadId: "thread-1",
-    });
-
-    expect(resolved).toBe("channel-parent");
-  });
-
-  it("forwards cfg when resolving channel id through Discord client", async () => {
-    const cfg = {
-      channels: { discord: { token: "tok" } },
-    } as OpenClawConfig;
-    hoisted.restGet.mockResolvedValueOnce({
-      id: "thread-1",
-      type: ChannelType.PublicThread,
-      parent_id: "channel-parent",
-    });
-
+it("strips the channel prefix before requesting its route", async () => {
+  mocks.get.mockResolvedValueOnce({ id: "123456789012345678", type: ChannelType.GuildText });
+  expect(
     await resolveChannelIdForBinding({
       cfg,
       accountId: "default",
-      threadId: "thread-1",
-    });
-
-    const createDiscordRestClientCalls = hoisted.createDiscordRestClient.mock.calls as unknown[][];
-    expect(createDiscordRestClientCalls[0]?.[1]).toBe(cfg);
-  });
-
-  it("keeps non-thread channel id even when parent_id exists", async () => {
-    hoisted.restGet.mockResolvedValueOnce({
-      id: "channel-text",
-      type: ChannelType.GuildText,
-      parent_id: "category-1",
-    });
-
-    const resolved = await resolveChannelIdForBinding({
-      accountId: "default",
-      threadId: "channel-text",
-    });
-
-    expect(resolved).toBe("channel-text");
-  });
-
-  it("keeps forum channel id instead of parent category", async () => {
-    hoisted.restGet.mockResolvedValueOnce({
-      id: "forum-1",
-      type: ChannelType.GuildForum,
-      parent_id: "category-1",
-    });
-
-    const resolved = await resolveChannelIdForBinding({
-      accountId: "default",
-      threadId: "forum-1",
-    });
-
-    expect(resolved).toBe("forum-1");
-  });
+      threadId: "channel:123456789012345678",
+    }),
+  ).toBe("123456789012345678");
+  expect(mocks.get.mock.calls[0]?.[0]).toBe("/channels/123456789012345678");
 });
 
-describe("maybeSendBindingMessage", () => {
-  beforeEach(() => {
-    hoisted.sendMessageDiscord.mockClear().mockResolvedValue({});
-    hoisted.sendWebhookMessageDiscord.mockClear().mockResolvedValue({});
+it("keeps a forum id instead of its parent category", async () => {
+  mocks.get.mockResolvedValueOnce({
+    id: "forum-1",
+    type: ChannelType.GuildForum,
+    parent_id: "category-1",
   });
+  expect(await resolveChannelIdForBinding({ cfg, accountId: "default", threadId: "forum-1" })).toBe(
+    "forum-1",
+  );
+});
 
-  it("forwards cfg to webhook send path", async () => {
-    const cfg = {
-      channels: { discord: { token: "tok" } },
-    } as OpenClawConfig;
-    const record = {
-      accountId: "default",
-      channelId: "parent-1",
-      threadId: "thread-1",
-      targetKind: "subagent",
-      targetSessionKey: "agent:main:subagent:test",
-      agentId: "main",
-      boundBy: "test",
-      boundAt: Date.now(),
-      lastActivityAt: Date.now(),
-      webhookId: "wh_1",
-      webhookToken: "tok_1",
-    } satisfies ThreadBindingRecord;
+it("rejects fractional Discord status values", () => {
+  expect(isDiscordThreadGoneError({ status: 403.5 })).toBe(false);
+  expect(isDiscordThreadGoneError({ statusCode: "404.5" })).toBe(false);
+  expect(isDiscordThreadGoneError({ statusCode: "+404" })).toBe(true);
+});
 
-    await maybeSendBindingMessage({
-      cfg,
-      record,
-      text: "hello webhook",
-    });
-
-    expect(hoisted.sendWebhookMessageDiscord).toHaveBeenCalledTimes(1);
-    expect(hoisted.sendWebhookMessageDiscord.mock.calls[0]?.[1]).toMatchObject({
-      cfg,
-      webhookId: "wh_1",
-      webhookToken: "tok_1",
-      accountId: "default",
-      threadId: "thread-1",
-    });
-    expect(hoisted.sendMessageDiscord).not.toHaveBeenCalled();
+it.each([false, true])("blocks revoked binding notices (webhook=%s)", async (webhook) => {
+  await maybeSendBindingMessage({
+    cfg,
+    record: { ...record, ...(webhook ? { webhookId: "wh-1", webhookToken: "tok-1" } : {}) },
+    text: "Binding ready",
+    assertCurrent: () => {
+      throw new Error("Command owner was revoked");
+    },
   });
+  expect(mocks.bot).not.toHaveBeenCalled();
+  expect(mocks.webhook).not.toHaveBeenCalled();
+});
+
+it("sends the binding notice through its configured webhook with the agent persona", async () => {
+  await maybeSendBindingMessage({
+    cfg,
+    record: { ...record, webhookId: "wh-1", webhookToken: "tok-1" },
+    text: "hello webhook",
+  });
+  expect(mocks.webhook).toHaveBeenCalledExactlyOnceWith("hello webhook", {
+    cfg,
+    webhookId: "wh-1",
+    webhookToken: "tok-1",
+    accountId: "default",
+    threadId: "thread-1",
+    username: "⚙️ main",
+  });
+  expect(mocks.bot).not.toHaveBeenCalled();
+});
+
+it("does not split the persona's surrogate pair at the length limit", () => {
+  const prefix = "a".repeat(76);
+  expect(resolveThreadBindingPersona({ label: `${prefix}😀tail`, agentId: "codex" })).toBe(
+    `⚙️ ${prefix}`,
+  );
 });

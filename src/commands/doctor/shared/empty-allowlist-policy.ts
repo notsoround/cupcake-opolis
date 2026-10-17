@@ -1,64 +1,51 @@
+import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
+import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import { getDoctorChannelCapabilities } from "../channel-capabilities.js";
 import type { DoctorAccountRecord, DoctorAllowFromList } from "../types.js";
 import { hasAllowFromEntries } from "./allowlist.js";
+import { shouldSkipChannelDoctorDefaultEmptyGroupAllowlistWarning } from "./channel-doctor.js";
 
 type CollectEmptyAllowlistPolicyWarningsParams = {
   account: DoctorAccountRecord;
   channelName?: string;
+  cfg?: OpenClawConfig;
   doctorFixCommand: string;
   parent?: DoctorAccountRecord;
   prefix: string;
+  shouldSkipDefaultEmptyGroupAllowlistWarning?: typeof shouldSkipChannelDoctorDefaultEmptyGroupAllowlistWarning;
 };
 
-function usesSenderBasedGroupAllowlist(channelName?: string): boolean {
-  if (!channelName) {
-    return true;
-  }
-  // These channels enforce group access via channel/space config, not sender-based
-  // groupAllowFrom lists.
-  return !(channelName === "discord" || channelName === "slack" || channelName === "googlechat");
+export function resolveDoctorAccountDmAccess(
+  account: DoctorAccountRecord,
+  parent?: DoctorAccountRecord,
+) {
+  const dm = asNullableRecord(account.dm);
+  const parentDm = asNullableRecord(parent?.dm);
+  return {
+    dmPolicy:
+      (account.dmPolicy as string | undefined) ??
+      (dm?.policy as string | undefined) ??
+      (parent?.dmPolicy as string | undefined) ??
+      (parentDm?.policy as string | undefined) ??
+      undefined,
+    // Doctor's legacy warnings prefer top-level allowlists, including inherited ones.
+    effectiveAllowFrom:
+      (account.allowFrom as DoctorAllowFromList | undefined) ??
+      (parent?.allowFrom as DoctorAllowFromList | undefined) ??
+      (dm?.allowFrom as DoctorAllowFromList | undefined) ??
+      (parentDm?.allowFrom as DoctorAllowFromList | undefined),
+  };
 }
 
-function allowsGroupAllowFromFallback(channelName?: string): boolean {
-  if (!channelName) {
-    return true;
-  }
-  // Keep doctor warnings aligned with runtime access semantics.
-  return !(
-    channelName === "googlechat" ||
-    channelName === "imessage" ||
-    channelName === "matrix" ||
-    channelName === "msteams" ||
-    channelName === "irc"
-  );
-}
-
+/** Collect DM/group allowlist warnings for one channel or account config record. */
 export function collectEmptyAllowlistPolicyWarningsForAccount(
   params: CollectEmptyAllowlistPolicyWarningsParams,
 ): string[] {
   const warnings: string[] = [];
-  const dmEntry = params.account.dm;
-  const dm =
-    dmEntry && typeof dmEntry === "object" && !Array.isArray(dmEntry)
-      ? (dmEntry as DoctorAccountRecord)
-      : undefined;
-  const parentDmEntry = params.parent?.dm;
-  const parentDm =
-    parentDmEntry && typeof parentDmEntry === "object" && !Array.isArray(parentDmEntry)
-      ? (parentDmEntry as DoctorAccountRecord)
-      : undefined;
-  const dmPolicy =
-    (params.account.dmPolicy as string | undefined) ??
-    (dm?.policy as string | undefined) ??
-    (params.parent?.dmPolicy as string | undefined) ??
-    (parentDm?.policy as string | undefined) ??
-    undefined;
-
-  const topAllowFrom =
-    (params.account.allowFrom as DoctorAllowFromList | undefined) ??
-    (params.parent?.allowFrom as DoctorAllowFromList | undefined);
-  const nestedAllowFrom = dm?.allowFrom as DoctorAllowFromList | undefined;
-  const parentNestedAllowFrom = parentDm?.allowFrom as DoctorAllowFromList | undefined;
-  const effectiveAllowFrom = topAllowFrom ?? nestedAllowFrom ?? parentNestedAllowFrom;
+  const { dmPolicy, effectiveAllowFrom } = resolveDoctorAccountDmAccess(
+    params.account,
+    params.parent,
+  );
 
   if (dmPolicy === "allowlist" && !hasAllowFromEntries(effectiveAllowFrom)) {
     warnings.push(
@@ -71,11 +58,28 @@ export function collectEmptyAllowlistPolicyWarningsForAccount(
     (params.parent?.groupPolicy as string | undefined) ??
     undefined;
 
-  if (groupPolicy !== "allowlist" || !usesSenderBasedGroupAllowlist(params.channelName)) {
+  if (
+    groupPolicy !== "allowlist" ||
+    !getDoctorChannelCapabilities(params.channelName).warnOnEmptyGroupSenderAllowlist
+  ) {
     return warnings;
   }
 
-  if (params.channelName === "telegram") {
+  if (
+    params.channelName &&
+    (
+      params.shouldSkipDefaultEmptyGroupAllowlistWarning ??
+      shouldSkipChannelDoctorDefaultEmptyGroupAllowlistWarning
+    )({
+      account: params.account,
+      channelName: params.channelName,
+      cfg: params.cfg,
+      dmPolicy,
+      effectiveAllowFrom,
+      parent: params.parent,
+      prefix: params.prefix,
+    })
+  ) {
     return warnings;
   }
 
@@ -85,7 +89,9 @@ export function collectEmptyAllowlistPolicyWarningsForAccount(
   // Match runtime semantics: resolveGroupAllowFromSources treats empty arrays as
   // unset and falls back to allowFrom.
   const groupAllowFrom = hasAllowFromEntries(rawGroupAllowFrom) ? rawGroupAllowFrom : undefined;
-  const fallbackToAllowFrom = allowsGroupAllowFromFallback(params.channelName);
+  const fallbackToAllowFrom = getDoctorChannelCapabilities(
+    params.channelName,
+  ).groupAllowFromFallbackToAllowFrom;
   const effectiveGroupAllowFrom =
     groupAllowFrom ?? (fallbackToAllowFrom ? effectiveAllowFrom : undefined);
 

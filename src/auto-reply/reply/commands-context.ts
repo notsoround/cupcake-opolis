@@ -1,39 +1,22 @@
-import type { OpenClawConfig } from "../../config/config.js";
+/** Builds normalized command context from inbound message and authorization state. */
+import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalString,
+} from "@openclaw/normalization-core/string-coerce";
+import { normalizeAnyChannelId } from "../../channels/registry.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { resolveCommandAuthorization } from "../command-auth.js";
+import { normalizeCommandBody } from "../commands-registry-normalize.js";
 import type { MsgContext } from "../templating.js";
 import type { CommandContext } from "./commands-types.js";
 import { stripMentions } from "./mentions.js";
 
-function normalizeCommandBodyLite(raw: string, botUsername?: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed.startsWith("/")) {
-    return trimmed;
-  }
-
-  const newline = trimmed.indexOf("\n");
-  const singleLine = newline === -1 ? trimmed : trimmed.slice(0, newline).trim();
-  const colonMatch = singleLine.match(/^\/([^\s:]+)\s*:(.*)$/);
-  const normalized = colonMatch
-    ? (() => {
-        const [, command, rest] = colonMatch;
-        const normalizedRest = rest.trimStart();
-        return normalizedRest ? `/${command} ${normalizedRest}` : `/${command}`;
-      })()
-    : singleLine;
-
-  const normalizedBotUsername = botUsername?.trim().toLowerCase();
-  const mentionMatch = normalizedBotUsername
-    ? normalized.match(/^\/([^\s@]+)@([^\s]+)(.*)$/)
-    : null;
-  const mentionNormalized =
-    mentionMatch && mentionMatch[2].toLowerCase() === normalizedBotUsername
-      ? `/${mentionMatch[1]}${mentionMatch[3] ?? ""}`
-      : normalized;
-  return mentionNormalized.replace(/^\/([^\s]+)(.*)$/, (_, command: string, rest: string) => {
-    return `/${command.toLowerCase()}${rest ?? ""}`;
-  });
+/** Selection and execution must bind to the same channel, including origin-routed turns. */
+export function resolveCommandChannel(ctx: MsgContext): string {
+  return normalizeLowercaseStringOrEmpty(ctx.OriginatingChannel ?? ctx.Provider ?? ctx.Surface);
 }
 
+/** Builds command routing/auth metadata consumed by command handlers. */
 export function buildCommandContext(params: {
   ctx: MsgContext;
   cfg: OpenClawConfig;
@@ -49,27 +32,34 @@ export function buildCommandContext(params: {
     cfg,
     commandAuthorized: params.commandAuthorized,
   });
-  const surface = (ctx.Surface ?? ctx.Provider ?? "").trim().toLowerCase();
-  const channel = (ctx.Provider ?? surface).trim().toLowerCase();
-  const abortKey = sessionKey ?? (auth.from || undefined) ?? (auth.to || undefined);
+  const surface = normalizeLowercaseStringOrEmpty(ctx.Surface ?? ctx.Provider);
+  const channel = resolveCommandChannel(ctx);
+  const from = auth.from ?? normalizeOptionalString(ctx.SenderId);
+  const to = auth.to ?? normalizeOptionalString(ctx.OriginatingTo);
+  const abortKey = sessionKey ?? from ?? to;
+  const channelId =
+    normalizeAnyChannelId(channel) ??
+    (channel ? (channel as CommandContext["channelId"]) : undefined);
   const rawBodyNormalized = triggerBodyNormalized;
-  const commandBodyNormalized = normalizeCommandBodyLite(
+  const commandBodyNormalized = normalizeCommandBody(
     isGroup ? stripMentions(rawBodyNormalized, ctx, cfg, agentId) : rawBodyNormalized,
-    ctx.BotUsername,
+    { botUsername: ctx.BotUsername },
   );
 
   return {
     surface,
     channel,
-    channelId: auth.providerId,
+    channelId: channelId ?? auth.providerId,
+    accountId: normalizeOptionalString(ctx.AccountId),
     ownerList: auth.ownerList,
     senderIsOwner: auth.senderIsOwner,
+    ...(auth.assertOwnerCurrent ? { assertOwnerCurrent: auth.assertOwnerCurrent } : {}),
     isAuthorizedSender: auth.isAuthorizedSender,
     senderId: auth.senderId,
     abortKey,
     rawBodyNormalized,
     commandBodyNormalized,
-    from: auth.from,
-    to: auth.to,
+    from,
+    to,
   };
 }

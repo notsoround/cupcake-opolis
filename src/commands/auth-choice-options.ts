@@ -1,7 +1,12 @@
-import type { AuthProfileStore } from "../agents/auth-profiles.js";
-import type { OpenClawConfig } from "../config/config.js";
-import { resolveManifestProviderAuthChoices } from "../plugins/provider-auth-choices.js";
-import { resolveProviderWizardOptions } from "../plugins/provider-wizard.js";
+// Builds provider-aware auth-choice options and grouped onboarding menus.
+import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
+import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { resolveProviderSetupFlowContributions } from "../flows/provider-flow.js";
+import {
+  compareProviderAuthChoiceGroups,
+  isFeaturedProviderAuthChoiceGroup,
+} from "../plugins/provider-auth-choice-order.js";
 import {
   CORE_AUTH_CHOICE_OPTIONS,
   type AuthChoiceGroup,
@@ -10,121 +15,132 @@ import {
 } from "./auth-choice-options.static.js";
 import type { AuthChoice, AuthChoiceGroupId } from "./onboard-types.js";
 
-const DEFAULT_AUTH_CHOICE_ONBOARDING_SCOPE = "text-inference" as const;
-
-function includesOnboardingScope(
-  onboardingScopes: readonly ("text-inference" | "image-generation")[] | undefined,
-  scope: "text-inference" | "image-generation",
-): boolean {
-  return onboardingScopes
-    ? onboardingScopes.includes(scope)
-    : scope === DEFAULT_AUTH_CHOICE_ONBOARDING_SCOPE;
-}
-
 function compareOptionLabels(a: AuthChoiceOption, b: AuthChoiceOption): number {
   return a.label.localeCompare(b.label);
 }
 
-function compareGroupLabels(a: AuthChoiceGroup, b: AuthChoiceGroup): number {
-  return a.label.localeCompare(b.label);
+/** Keep the first-tier provider list stable; every other group belongs under More. */
+export function isFeaturedAuthChoiceGroup(group: AuthChoiceGroup): boolean {
+  return isFeaturedProviderAuthChoiceGroup(group.value);
 }
 
-function resolveManifestProviderChoiceOptions(params?: {
+function compareAssistantOptions(a: AuthChoiceOption, b: AuthChoiceOption): number {
+  const priorityA = a.assistantPriority ?? 0;
+  const priorityB = b.assistantPriority ?? 0;
+  return priorityA - priorityB || compareOptionLabels(a, b);
+}
+
+/** Sort auth-choice groups with featured providers first, then stable labels. */
+export function compareAuthChoiceGroups(a: AuthChoiceGroup, b: AuthChoiceGroup): number {
+  return compareProviderAuthChoiceGroups(
+    { id: a.value, label: a.label },
+    { id: b.value, label: b.label },
+  );
+}
+
+function resolveProviderChoiceOptions(params?: {
   config?: OpenClawConfig;
   workspaceDir?: string;
   env?: NodeJS.ProcessEnv;
 }): AuthChoiceOption[] {
-  return resolveManifestProviderAuthChoices(params ?? {})
-    .filter((choice) =>
-      includesOnboardingScope(choice.onboardingScopes, DEFAULT_AUTH_CHOICE_ONBOARDING_SCOPE),
-    )
-    .map((choice) => ({
-      value: choice.choiceId as AuthChoice,
-      label: choice.choiceLabel,
-      ...(choice.choiceHint ? { hint: choice.choiceHint } : {}),
-      ...(choice.groupId ? { groupId: choice.groupId as AuthChoiceGroupId } : {}),
-      ...(choice.groupLabel ? { groupLabel: choice.groupLabel } : {}),
-      ...(choice.groupHint ? { groupHint: choice.groupHint } : {}),
-    }));
-}
-
-function resolveRuntimeFallbackProviderChoiceOptions(params?: {
-  config?: OpenClawConfig;
-  workspaceDir?: string;
-  env?: NodeJS.ProcessEnv;
-}): AuthChoiceOption[] {
-  return resolveProviderWizardOptions(params ?? {})
-    .filter((option) =>
-      includesOnboardingScope(option.onboardingScopes, DEFAULT_AUTH_CHOICE_ONBOARDING_SCOPE),
-    )
-    .map((option) => ({
-      value: option.value as AuthChoice,
+  return resolveProviderSetupFlowContributions({
+    ...params,
+    scope: "text-inference",
+  }).map(({ option, providerId }) => {
+    const choice: AuthChoiceOption = {
+      value: option.value,
       label: option.label,
-      ...(option.hint ? { hint: option.hint } : {}),
-      groupId: option.groupId as AuthChoiceGroupId,
-      groupLabel: option.groupLabel,
-      ...(option.groupHint ? { groupHint: option.groupHint } : {}),
-    }));
+      providerId,
+    };
+    if (option.modelTarget) {
+      choice.modelTarget = option.modelTarget;
+    }
+    if (option.hint) {
+      choice.hint = option.hint;
+    }
+    if (option.assistantPriority !== undefined) {
+      choice.assistantPriority = option.assistantPriority;
+    }
+    if (option.assistantVisibility) {
+      choice.assistantVisibility = option.assistantVisibility;
+    }
+    if (option.group) {
+      choice.groupId = option.group.id;
+      choice.groupLabel = option.group.label;
+      if (option.group.hint) {
+        choice.groupHint = option.group.hint;
+      }
+    }
+    if (option.onboardingFeatured) {
+      choice.onboardingFeatured = true;
+    }
+    return choice;
+  });
 }
 
+/**
+ * Format every accepted `--auth-choice` value for CLI help and validation.
+ *
+ * This is the single owner of that set: help text, onboard preflight, and the
+ * non-interactive dispatcher all render it, so an advertised value is always an
+ * accepted one. Deprecated aliases stay out; `auth-choice-legacy.ts` normalizes
+ * them before any surface sees them.
+ */
 export function formatAuthChoiceChoicesForCli(params?: {
-  includeSkip?: boolean;
-  includeLegacyAliases?: boolean;
   config?: OpenClawConfig;
   workspaceDir?: string;
   env?: NodeJS.ProcessEnv;
 }): string {
   const values = [
-    ...formatStaticAuthChoiceChoicesForCli(params).split("|"),
-    ...resolveManifestProviderChoiceOptions(params).map((option) => option.value),
+    ...formatStaticAuthChoiceChoicesForCli().split("|"),
+    ...resolveProviderSetupFlowContributions({ ...params, scope: "all" }).map(
+      (contribution) => contribution.option.value,
+    ),
   ];
 
-  return [...new Set(values)].join("|");
+  return uniqueStrings(values).join("|");
 }
 
-export function buildAuthChoiceOptions(params: {
-  store: AuthProfileStore;
-  includeSkip: boolean;
+function buildAuthChoiceOptions(params: {
+  assistantVisibleOnly?: boolean;
+  detectedProviderIds?: ReadonlySet<string>;
   config?: OpenClawConfig;
   workspaceDir?: string;
   env?: NodeJS.ProcessEnv;
 }): AuthChoiceOption[] {
-  void params.store;
   const optionByValue = new Map<AuthChoice, AuthChoiceOption>();
   for (const option of CORE_AUTH_CHOICE_OPTIONS) {
     optionByValue.set(option.value, option);
   }
-  for (const option of resolveManifestProviderChoiceOptions({
+  for (const option of resolveProviderChoiceOptions({
     config: params.config,
     workspaceDir: params.workspaceDir,
     env: params.env,
   })) {
     optionByValue.set(option.value, option);
   }
-  for (const option of resolveRuntimeFallbackProviderChoiceOptions({
-    config: params.config,
-    workspaceDir: params.workspaceDir,
-    env: params.env,
-  })) {
-    if (!optionByValue.has(option.value)) {
-      optionByValue.set(option.value, option);
-    }
-  }
 
-  const options: AuthChoiceOption[] = Array.from(optionByValue.values()).toSorted(
-    compareOptionLabels,
+  const detectedProviders = new Set(
+    [...(params.detectedProviderIds ?? [])].map(normalizeProviderId),
   );
-
-  if (params.includeSkip) {
-    options.push({ value: "skip", label: "Skip for now" });
-  }
-
-  return options;
+  return Array.from(optionByValue.values())
+    .toSorted(compareOptionLabels)
+    .filter(
+      (option) =>
+        option.assistantVisibility !== "detected-only" ||
+        (option.providerId !== undefined &&
+          detectedProviders.has(normalizeProviderId(option.providerId))),
+    )
+    .filter((option) =>
+      params.assistantVisibleOnly ? option.assistantVisibility !== "manual-only" : true,
+    );
 }
 
+/** Build grouped auth choices, filtering manual-only methods by default. */
 export function buildAuthChoiceGroups(params: {
-  store: AuthProfileStore;
   includeSkip: boolean;
+  assistantVisibleOnly?: boolean;
+  detectedProviderIds?: ReadonlySet<string>;
   config?: OpenClawConfig;
   workspaceDir?: string;
   env?: NodeJS.ProcessEnv;
@@ -134,7 +150,7 @@ export function buildAuthChoiceGroups(params: {
 } {
   const options = buildAuthChoiceOptions({
     ...params,
-    includeSkip: false,
+    assistantVisibleOnly: params.assistantVisibleOnly ?? true,
   });
   const groupsById = new Map<AuthChoiceGroupId, AuthChoiceGroup>();
 
@@ -145,21 +161,26 @@ export function buildAuthChoiceGroups(params: {
     const existing = groupsById.get(option.groupId);
     if (existing) {
       existing.options.push(option);
+      if (option.providerId) {
+        existing.providerIds = uniqueStrings([...(existing.providerIds ?? []), option.providerId]);
+      }
       continue;
     }
+    const providerIds = option.providerId ? [option.providerId] : [];
     groupsById.set(option.groupId, {
       value: option.groupId,
       label: option.groupLabel,
       ...(option.groupHint ? { hint: option.groupHint } : {}),
+      ...(providerIds.length > 0 ? { providerIds } : {}),
       options: [option],
     });
   }
   const groups = Array.from(groupsById.values())
-    .map((group) => ({
-      ...group,
-      options: [...group.options].toSorted(compareOptionLabels),
-    }))
-    .toSorted(compareGroupLabels);
+    .map((group) => {
+      group.options = group.options.toSorted(compareAssistantOptions);
+      return group;
+    })
+    .toSorted(compareAuthChoiceGroups);
 
   const skipOption = params.includeSkip
     ? ({ value: "skip", label: "Skip for now" } satisfies AuthChoiceOption)

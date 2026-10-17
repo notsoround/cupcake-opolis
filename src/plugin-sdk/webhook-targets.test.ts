@@ -1,15 +1,21 @@
+/**
+ * Tests webhook target registration, matching, and request pipeline helpers.
+ */
 import { EventEmitter } from "node:events";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createEmptyPluginRegistry } from "../plugins/registry.js";
+import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
 import { createWebhookInFlightLimiter } from "./webhook-request-guards.js";
 import {
+  canonicalizeWebhookRouteKey,
+  normalizeWebhookPath,
   registerWebhookTarget,
   registerWebhookTargetWithPluginRoute,
   rejectNonPostWebhookRequest,
   resolveSingleWebhookTarget,
   resolveSingleWebhookTargetAsync,
+  resolveWebhookPath,
   resolveWebhookTargetWithAuthOrReject,
   resolveWebhookTargetWithAuthOrRejectSync,
   resolveWebhookTargets,
@@ -24,8 +30,64 @@ function createRequest(method: string, url: string): IncomingMessage {
   return req;
 }
 
+function createResponse() {
+  const setHeader = vi.fn();
+  const end = vi.fn();
+  return {
+    res: {
+      statusCode: 200,
+      setHeader,
+      end,
+    } as unknown as ServerResponse,
+    setHeader,
+    end,
+  };
+}
+
+function createPipelineRequest(url: string): IncomingMessage {
+  const req = createRequest("POST", url);
+  (req as unknown as { socket: { remoteAddress: string } }).socket = {
+    remoteAddress: "127.0.0.1",
+  };
+  return req;
+}
+
 afterEach(() => {
   setActivePluginRegistry(createEmptyPluginRegistry());
+});
+
+describe("webhook paths", () => {
+  it.each([
+    ["  ", "/"],
+    ["/", "/"],
+    [" hook/ ", "/hook"],
+    ["/hook//", "/hook/"],
+  ])("normalizes configured path %j without canonicalizing it", (raw, expected) => {
+    expect(normalizeWebhookPath(raw)).toBe(expected);
+  });
+
+  it.each([
+    { params: { webhookPath: " explicit/ ", webhookUrl: "invalid" }, expected: "/explicit" },
+    {
+      params: { webhookUrl: "https://example.test/hook%2Fpart/?q=1#fragment" },
+      expected: "/hook%2Fpart",
+    },
+    { params: { webhookUrl: "invalid", defaultPath: "/fallback/" }, expected: null },
+    { params: { webhookUrl: "  ", defaultPath: "/fallback/" }, expected: "/fallback/" },
+    { params: { webhookUrl: "https://example.test" }, expected: "/" },
+    { params: {}, expected: null },
+  ])("resolves callback path from $params", ({ params, expected }) => {
+    expect(resolveWebhookPath(params)).toBe(expected);
+  });
+
+  it.each([
+    ["hook", "/hook"],
+    ["/Hooks//Zalo/Media/", "/hooks/zalo/media"],
+    ["/hooks/./zalo/media", "/hooks/zalo/media"],
+    ["/hooks/%257Aalo/media", "/hooks/zalo/media"],
+  ])("canonicalizes %s for Gateway route identity", (raw, expected) => {
+    expect(canonicalizeWebhookRouteKey(raw)).toBe(expected);
+  });
 });
 
 describe("registerWebhookTarget", () => {
@@ -63,7 +125,7 @@ describe("registerWebhookTarget", () => {
     expect(onFirstPathTarget).toHaveBeenCalledTimes(1);
     expect(onFirstPathTarget).toHaveBeenCalledWith({
       path: "/hook",
-      target: expect.objectContaining({ id: "A", path: "/hook" }),
+      target: registeredA.target,
     });
 
     registeredB.unregister();
@@ -125,47 +187,132 @@ describe("registerWebhookTargetWithPluginRoute", () => {
     });
 
     expect(registry.httpRoutes).toHaveLength(1);
-    expect(registry.httpRoutes[0]).toEqual(
-      expect.objectContaining({
-        pluginId: "demo",
-        path: "/hook",
-        source: "demo-webhook",
-      }),
-    );
+    const route = registry.httpRoutes[0];
+    if (!route) {
+      throw new Error("expected plugin route to be registered");
+    }
+    expect(route.pluginId).toBe("demo");
+    expect(route.path).toBe("/hook");
+    expect(route.source).toBe("demo-webhook");
 
     registeredA.unregister();
     expect(registry.httpRoutes).toHaveLength(1);
     registeredB.unregister();
     expect(registry.httpRoutes).toHaveLength(0);
   });
+
+  it("does not store a target when strict route registration is rejected", () => {
+    const registry = createEmptyPluginRegistry();
+    const existingRoute = {
+      path: "/hook",
+      match: "exact" as const,
+      auth: "plugin" as const,
+      handler: () => {},
+      pluginId: "existing",
+      source: "existing-webhook",
+    };
+    registry.httpRoutes.push(existingRoute);
+    setActivePluginRegistry(registry);
+    const targets = new Map<string, Array<{ path: string; id: string }>>();
+
+    expect(() =>
+      registerWebhookTargetWithPluginRoute({
+        targetsByPath: targets,
+        target: { path: "/hook", id: "A" },
+        route: {
+          auth: "plugin",
+          pluginId: "demo",
+          source: "demo-webhook",
+          throwOnFailure: true,
+          handler: () => {},
+        },
+      }),
+    ).toThrow("route replacement denied");
+
+    expect(targets.size).toBe(0);
+    expect(registry.httpRoutes).toEqual([existingRoute]);
+  });
+
+  it.each(["first", "second"] as const)(
+    "keeps one canonical route until the %s alias target is the final owner",
+    (unregisterFirst) => {
+      const registry = createEmptyPluginRegistry();
+      setActivePluginRegistry(registry);
+      const targets = new Map<string, Array<{ path: string; id: string }>>();
+
+      const first = registerWebhookTargetWithPluginRoute({
+        targetsByPath: targets,
+        target: { path: "/Hooks//Zalo/Media/", id: "A" },
+        route: {
+          auth: "plugin",
+          match: "prefix",
+          pluginId: "zalo",
+          source: "zalo-hosted-media",
+          handler: () => {},
+        },
+      });
+      const second = registerWebhookTargetWithPluginRoute({
+        targetsByPath: targets,
+        target: { path: "/hooks/zalo/media", id: "B" },
+        route: {
+          auth: "plugin",
+          match: "prefix",
+          pluginId: "zalo",
+          source: "zalo-hosted-media",
+          handler: () => {},
+        },
+      });
+
+      expect(targets).toEqual(
+        new Map([
+          [
+            "/hooks/zalo/media",
+            [
+              { path: "/hooks/zalo/media", id: "A" },
+              { path: "/hooks/zalo/media", id: "B" },
+            ],
+          ],
+        ]),
+      );
+      expect(registry.httpRoutes).toHaveLength(1);
+
+      (unregisterFirst === "first" ? first : second).unregister();
+      expect(registry.httpRoutes).toHaveLength(1);
+      (unregisterFirst === "first" ? second : first).unregister();
+      expect(registry.httpRoutes).toHaveLength(0);
+    },
+  );
 });
 
 describe("resolveWebhookTargets", () => {
-  it("resolves normalized path targets", () => {
-    const targets = new Map<string, Array<{ id: string }>>();
-    targets.set("/hook", [{ id: "A" }]);
-
-    expect(resolveWebhookTargets(createRequest("POST", "/hook/"), targets)).toEqual({
-      path: "/hook",
-      targets: [{ id: "A" }],
-    });
-  });
-
-  it("returns null when path has no targets", () => {
-    const targets = new Map<string, Array<{ id: string }>>();
-    expect(resolveWebhookTargets(createRequest("POST", "/missing"), targets)).toBeNull();
+  it.each([
+    {
+      name: "resolves normalized path targets",
+      requestPath: "/hook/",
+      targets: new Map([["/hook", [{ id: "A" }]]]),
+      expected: {
+        path: "/hook",
+        targets: [{ id: "A" }],
+      },
+    },
+    {
+      name: "resolves a canonical alias after an exact-key miss",
+      requestPath: "/Hooks//Zalo/Media/",
+      targets: new Map([["/hooks/zalo/media", [{ id: "A" }]]]),
+      expected: {
+        path: "/hooks/zalo/media",
+        targets: [{ id: "A" }],
+      },
+    },
+  ])("$name", ({ requestPath, targets, expected }) => {
+    expect(resolveWebhookTargets(createRequest("POST", requestPath), targets)).toEqual(expected);
   });
 });
 
 describe("withResolvedWebhookRequestPipeline", () => {
   it("returns false when request path has no registered targets", async () => {
     const req = createRequest("POST", "/missing");
-    req.headers = {};
-    const res = {
-      statusCode: 200,
-      setHeader: vi.fn(),
-      end: vi.fn(),
-    } as unknown as ServerResponse;
+    const { res } = createResponse();
     const handled = await withResolvedWebhookRequestPipeline({
       req,
       res,
@@ -177,16 +324,8 @@ describe("withResolvedWebhookRequestPipeline", () => {
   });
 
   it("runs handler when targets resolve and method passes", async () => {
-    const req = createRequest("POST", "/hook");
-    req.headers = {};
-    (req as unknown as { socket: { remoteAddress: string } }).socket = {
-      remoteAddress: "127.0.0.1",
-    };
-    const res = {
-      statusCode: 200,
-      setHeader: vi.fn(),
-      end: vi.fn(),
-    } as unknown as ServerResponse;
+    const req = createPipelineRequest("/hook");
+    const { res } = createResponse();
     const handle = vi.fn(async () => {});
     const handled = await withResolvedWebhookRequestPipeline({
       req,
@@ -200,16 +339,8 @@ describe("withResolvedWebhookRequestPipeline", () => {
   });
 
   it("releases in-flight slot when handler throws", async () => {
-    const req = createRequest("POST", "/hook");
-    req.headers = {};
-    (req as unknown as { socket: { remoteAddress: string } }).socket = {
-      remoteAddress: "127.0.0.1",
-    };
-    const res = {
-      statusCode: 200,
-      setHeader: vi.fn(),
-      end: vi.fn(),
-    } as unknown as ServerResponse;
+    const req = createPipelineRequest("/hook");
+    const { res } = createResponse();
     const limiter = createWebhookInFlightLimiter();
 
     await expect(
@@ -231,24 +362,35 @@ describe("withResolvedWebhookRequestPipeline", () => {
 
 describe("rejectNonPostWebhookRequest", () => {
   it("sets 405 for non-POST requests", () => {
-    const setHeaderMock = vi.fn();
-    const endMock = vi.fn();
-    const res = {
-      statusCode: 200,
-      setHeader: setHeaderMock,
-      end: endMock,
-    } as unknown as ServerResponse;
+    const { res, setHeader, end } = createResponse();
 
     const rejected = rejectNonPostWebhookRequest(createRequest("GET", "/hook"), res);
 
     expect(rejected).toBe(true);
     expect(res.statusCode).toBe(405);
-    expect(setHeaderMock).toHaveBeenCalledWith("Allow", "POST");
-    expect(endMock).toHaveBeenCalledWith("Method Not Allowed");
+    expect(setHeader).toHaveBeenCalledWith("Allow", "POST");
+    expect(end).toHaveBeenCalledWith("Method Not Allowed");
   });
 });
 
 describe("resolveSingleWebhookTarget", () => {
+  it.each([0, false, "", null, undefined])(
+    "retains a matching falsy target %j and detects a second match",
+    async (target) => {
+      expect(resolveSingleWebhookTarget([target], () => true)).toEqual({ kind: "single", target });
+      await expect(resolveSingleWebhookTargetAsync([target], async () => true)).resolves.toEqual({
+        kind: "single",
+        target,
+      });
+      expect(resolveSingleWebhookTarget([target, target], () => true)).toEqual({
+        kind: "ambiguous",
+      });
+      await expect(
+        resolveSingleWebhookTargetAsync([target, target], async () => true),
+      ).resolves.toEqual({ kind: "ambiguous" });
+    },
+  );
+
   const resolvers: Array<{
     name: string;
     run: (
@@ -264,19 +406,9 @@ describe("resolveSingleWebhookTarget", () => {
     {
       name: "async",
       run: (targets, isMatch) =>
-        resolveSingleWebhookTargetAsync(targets, async (value) => Boolean(await isMatch(value))),
+        resolveSingleWebhookTargetAsync(targets, async (value) => isMatch(value)),
     },
   ];
-
-  it.each(resolvers)("returns none when no target matches ($name)", async ({ run }) => {
-    const result = await run(["a", "b"], (value) => value === "c");
-    expect(result).toEqual({ kind: "none" });
-  });
-
-  it.each(resolvers)("returns the single match ($name)", async ({ run }) => {
-    const result = await run(["a", "b"], (value) => value === "b");
-    expect(result).toEqual({ kind: "single", target: "b" });
-  });
 
   it.each(resolvers)("returns ambiguous after second match ($name)", async ({ run }) => {
     const calls: string[] = [];
@@ -291,11 +423,7 @@ describe("resolveSingleWebhookTarget", () => {
 
 describe("resolveWebhookTargetWithAuthOrReject", () => {
   it("returns matched target", async () => {
-    const res = {
-      statusCode: 200,
-      setHeader: vi.fn(),
-      end: vi.fn(),
-    } as unknown as ServerResponse;
+    const { res } = createResponse();
     await expect(
       resolveWebhookTargetWithAuthOrReject({
         targets: [{ id: "a" }, { id: "b" }],
@@ -305,50 +433,36 @@ describe("resolveWebhookTargetWithAuthOrReject", () => {
     ).resolves.toEqual({ id: "b" });
   });
 
-  it("writes unauthorized response on no match", async () => {
-    const endMock = vi.fn();
-    const res = {
-      statusCode: 200,
-      setHeader: vi.fn(),
-      end: endMock,
-    } as unknown as ServerResponse;
+  it.each([
+    {
+      name: "writes unauthorized response on no match",
+      targets: [{ id: "a" }],
+      isMatch: () => false,
+      expectedEnd: "unauthorized",
+    },
+    {
+      name: "writes ambiguous response on multi-match",
+      targets: [{ id: "a" }, { id: "b" }],
+      isMatch: () => true,
+      expectedEnd: "ambiguous webhook target",
+    },
+  ])("$name", async ({ targets, isMatch, expectedEnd }) => {
+    const { res, end } = createResponse();
     await expect(
       resolveWebhookTargetWithAuthOrReject({
-        targets: [{ id: "a" }],
+        targets,
         res,
-        isMatch: () => false,
+        isMatch,
       }),
     ).resolves.toBeNull();
     expect(res.statusCode).toBe(401);
-    expect(endMock).toHaveBeenCalledWith("unauthorized");
-  });
-
-  it("writes ambiguous response on multi-match", async () => {
-    const endMock = vi.fn();
-    const res = {
-      statusCode: 200,
-      setHeader: vi.fn(),
-      end: endMock,
-    } as unknown as ServerResponse;
-    await expect(
-      resolveWebhookTargetWithAuthOrReject({
-        targets: [{ id: "a" }, { id: "b" }],
-        res,
-        isMatch: () => true,
-      }),
-    ).resolves.toBeNull();
-    expect(res.statusCode).toBe(401);
-    expect(endMock).toHaveBeenCalledWith("ambiguous webhook target");
+    expect(end).toHaveBeenCalledWith(expectedEnd);
   });
 });
 
 describe("resolveWebhookTargetWithAuthOrRejectSync", () => {
   it("returns matched target synchronously", () => {
-    const res = {
-      statusCode: 200,
-      setHeader: vi.fn(),
-      end: vi.fn(),
-    } as unknown as ServerResponse;
+    const { res } = createResponse();
     const target = resolveWebhookTargetWithAuthOrRejectSync({
       targets: [{ id: "a" }, { id: "b" }],
       res,

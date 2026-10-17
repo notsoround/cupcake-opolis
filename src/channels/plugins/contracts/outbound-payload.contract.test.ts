@@ -1,157 +1,21 @@
-import { describe, vi } from "vitest";
-import { discordOutbound } from "../../../../extensions/discord/src/outbound-adapter.js";
-import { whatsappOutbound } from "../../../../extensions/whatsapp/src/outbound-adapter.js";
-import { sendMessageZalo } from "../../../../extensions/zalo/src/send.js";
-import { sendMessageZalouser } from "../../../../extensions/zalouser/src/send.js";
-import { parseZalouserOutboundTarget } from "../../../../extensions/zalouser/src/session-route.js";
+// Outbound payload contract tests cover channel plugin outbound payload shape and normalization.
+import { describe, expect, it, vi } from "vitest";
+import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import {
-  chunkTextForOutbound as chunkZaloTextForOutbound,
-  sendPayloadWithChunkedTextAndMedia as sendZaloPayloadWithChunkedTextAndMedia,
-} from "../../../../src/plugin-sdk/zalo.js";
-import { sendPayloadWithChunkedTextAndMedia as sendZalouserPayloadWithChunkedTextAndMedia } from "../../../../src/plugin-sdk/zalouser.js";
-import { slackOutbound } from "../../../../test/channel-outbounds.js";
-import type { ReplyPayload } from "../../../auto-reply/types.js";
-import { createDirectTextMediaOutbound } from "../outbound/direct-text-media.js";
+  createDirectTextMediaOutbound,
+  createScopedChannelMediaMaxBytesResolver,
+} from "../outbound/direct-text-media.js";
 import {
   installChannelOutboundPayloadContractSuite,
-  primeChannelOutboundSendMock,
-} from "./suites.js";
+  type OutboundPayloadHarnessParams,
+} from "./outbound-payload-testkit.js";
+import { primeChannelOutboundSendMock } from "./test-helpers.js";
 
-vi.mock("../../../../extensions/zalo/src/send.js", () => ({
-  sendMessageZalo: vi.fn().mockResolvedValue({ ok: true, messageId: "zl-1" }),
-}));
-
-// This suite only validates payload adaptation. Keep zalouser's runtime-only
-// ZCA import graph mocked so local contract runs don't depend on native socket
-// deps being resolved through the extension runtime seam.
-vi.mock("../../../../extensions/zalouser/src/accounts.js", () => ({
-  listZalouserAccountIds: vi.fn(() => ["default"]),
-  resolveDefaultZalouserAccountId: vi.fn(() => "default"),
-  resolveZalouserAccountSync: vi.fn(() => ({
-    accountId: "default",
-    profile: "default",
-    name: "test",
-    enabled: true,
-    authenticated: true,
-    config: {},
-  })),
-  getZcaUserInfo: vi.fn(async () => null),
-  checkZcaAuthenticated: vi.fn(async () => false),
-}));
-
-vi.mock("../../../../extensions/zalouser/src/zalo-js.js", () => ({
-  checkZaloAuthenticated: vi.fn(async () => false),
-  getZaloUserInfo: vi.fn(async () => null),
-  listZaloFriendsMatching: vi.fn(async () => []),
-  listZaloGroupMembers: vi.fn(async () => []),
-  listZaloGroupsMatching: vi.fn(async () => []),
-  logoutZaloProfile: vi.fn(async () => {}),
-  resolveZaloAllowFromEntries: vi.fn(async ({ entries }: { entries: string[] }) =>
-    entries.map((entry) => ({ input: entry, resolved: true, id: entry, note: undefined })),
-  ),
-  resolveZaloGroupsByEntries: vi.fn(async ({ entries }: { entries: string[] }) =>
-    entries.map((entry) => ({ input: entry, resolved: true, id: entry, note: undefined })),
-  ),
-  startZaloQrLogin: vi.fn(async () => ({
-    message: "qr pending",
-    qrDataUrl: undefined,
-  })),
-  waitForZaloQrLogin: vi.fn(async () => ({
-    connected: false,
-    message: "login pending",
-  })),
-}));
-
-vi.mock("../../../../extensions/zalouser/src/send.js", () => ({
-  sendMessageZalouser: vi.fn().mockResolvedValue({ ok: true, messageId: "zlu-1" }),
-  sendReactionZalouser: vi.fn().mockResolvedValue({ ok: true }),
-}));
-
-type PayloadHarnessParams = {
-  payload: ReplyPayload;
-  sendResults?: Array<{ messageId: string }>;
-};
-
-function buildChannelSendResult(channel: string, result: Record<string, unknown>) {
-  return {
-    channel,
-    messageId: typeof result.messageId === "string" ? result.messageId : "",
-  };
-}
-
-const mockedSendZalo = vi.mocked(sendMessageZalo);
-const mockedSendZalouser = vi.mocked(sendMessageZalouser);
-
-function createSlackHarness(params: PayloadHarnessParams) {
-  const sendSlack = vi.fn();
-  primeChannelOutboundSendMock(
-    sendSlack,
-    { messageId: "sl-1", channelId: "C12345", ts: "1234.5678" },
-    params.sendResults,
-  );
-  const ctx = {
-    cfg: {},
-    to: "C12345",
-    text: "",
-    payload: params.payload,
-    deps: {
-      sendSlack,
-    },
-  };
-  return {
-    run: async () => await slackOutbound.sendPayload!(ctx),
-    sendMock: sendSlack,
-    to: ctx.to,
-  };
-}
-
-function createDiscordHarness(params: PayloadHarnessParams) {
-  const sendDiscord = vi.fn();
-  primeChannelOutboundSendMock(
-    sendDiscord,
-    { messageId: "dc-1", channelId: "123456" },
-    params.sendResults,
-  );
-  const ctx = {
-    cfg: {},
-    to: "channel:123456",
-    text: "",
-    payload: params.payload,
-    deps: {
-      sendDiscord,
-    },
-  };
-  return {
-    run: async () => await discordOutbound.sendPayload!(ctx),
-    sendMock: sendDiscord,
-    to: ctx.to,
-  };
-}
-
-function createWhatsAppHarness(params: PayloadHarnessParams) {
-  const sendWhatsApp = vi.fn();
-  primeChannelOutboundSendMock(sendWhatsApp, { messageId: "wa-1" }, params.sendResults);
-  const ctx = {
-    cfg: {},
-    to: "5511999999999@c.us",
-    text: "",
-    payload: params.payload,
-    deps: {
-      sendWhatsApp,
-    },
-  };
-  return {
-    run: async () => await whatsappOutbound.sendPayload!(ctx),
-    sendMock: sendWhatsApp,
-    to: ctx.to,
-  };
-}
-
-function createDirectTextMediaHarness(params: PayloadHarnessParams) {
+function createDirectTextMediaHarness(params: OutboundPayloadHarnessParams) {
   const sendFn = vi.fn();
   primeChannelOutboundSendMock(sendFn, { messageId: "m1" }, params.sendResults);
   const outbound = createDirectTextMediaOutbound({
-    channel: "imessage",
+    channel: "direct-text-media",
     resolveSender: () => sendFn,
     resolveMaxBytes: () => undefined,
     buildTextOptions: (opts) => opts as never,
@@ -163,147 +27,279 @@ function createDirectTextMediaHarness(params: PayloadHarnessParams) {
     text: "",
     payload: params.payload,
   };
+  const sendPayload = outbound.sendPayload;
+  if (!sendPayload) {
+    throw new Error("Expected direct text/media outbound sendPayload");
+  }
   return {
-    run: async () => await outbound.sendPayload!(ctx),
+    run: async () => await sendPayload(ctx),
     sendMock: sendFn,
     to: ctx.to,
   };
 }
 
-function createZaloHarness(params: PayloadHarnessParams) {
-  primeChannelOutboundSendMock(mockedSendZalo, { ok: true, messageId: "zl-1" }, params.sendResults);
-  const ctx = {
-    cfg: {},
-    to: "123456789",
-    text: "",
-    payload: params.payload,
-  };
-  return {
-    run: async () =>
-      await sendZaloPayloadWithChunkedTextAndMedia({
-        ctx,
-        textChunkLimit: 2000,
-        chunker: chunkZaloTextForOutbound,
-        sendText: async (nextCtx) =>
-          buildChannelSendResult(
-            "zalo",
-            await mockedSendZalo(nextCtx.to, nextCtx.text, {
-              accountId: undefined,
-              cfg: nextCtx.cfg,
-            }),
-          ),
-        sendMedia: async (nextCtx) =>
-          buildChannelSendResult(
-            "zalo",
-            await mockedSendZalo(nextCtx.to, nextCtx.text, {
-              accountId: undefined,
-              cfg: nextCtx.cfg,
-              mediaUrl: nextCtx.mediaUrl,
-            }),
-          ),
-        emptyResult: { channel: "zalo", messageId: "" },
-      }),
-    sendMock: mockedSendZalo,
-    to: ctx.to,
-  };
-}
-
-function createZalouserHarness(params: PayloadHarnessParams) {
-  primeChannelOutboundSendMock(
-    mockedSendZalouser,
-    { ok: true, messageId: "zlu-1" },
-    params.sendResults,
-  );
-  const ctx = {
-    cfg: {},
-    to: "user:987654321",
-    text: "",
-    payload: params.payload,
-  };
-  return {
-    run: async () =>
-      await sendZalouserPayloadWithChunkedTextAndMedia({
-        ctx,
-        sendText: async (nextCtx) => {
-          const target = parseZalouserOutboundTarget(nextCtx.to);
-          return buildChannelSendResult(
-            "zalouser",
-            await mockedSendZalouser(target.threadId, nextCtx.text, {
-              profile: "default",
-              isGroup: target.isGroup,
-              textMode: "markdown",
-              textChunkMode: "length",
-              textChunkLimit: 1200,
-            }),
-          );
-        },
-        sendMedia: async (nextCtx) => {
-          const target = parseZalouserOutboundTarget(nextCtx.to);
-          return buildChannelSendResult(
-            "zalouser",
-            await mockedSendZalouser(target.threadId, nextCtx.text, {
-              profile: "default",
-              isGroup: target.isGroup,
-              mediaUrl: nextCtx.mediaUrl,
-              textMode: "markdown",
-              textChunkMode: "length",
-              textChunkLimit: 1200,
-            }),
-          );
-        },
-        emptyResult: { channel: "zalouser", messageId: "" },
-      }),
-    sendMock: mockedSendZalouser,
-    to: "987654321",
-  };
-}
-
-describe("channel outbound payload contract", () => {
-  describe("slack", () => {
+describe("outbound payload contracts", () => {
+  describe("direct text/media", () => {
     installChannelOutboundPayloadContractSuite({
-      channel: "slack",
-      chunking: { mode: "passthrough", longTextLength: 5000 },
-      createHarness: createSlackHarness,
-    });
-  });
-
-  describe("discord", () => {
-    installChannelOutboundPayloadContractSuite({
-      channel: "discord",
-      chunking: { mode: "passthrough", longTextLength: 3000 },
-      createHarness: createDiscordHarness,
-    });
-  });
-
-  describe("whatsapp", () => {
-    installChannelOutboundPayloadContractSuite({
-      channel: "whatsapp",
-      chunking: { mode: "split", longTextLength: 5000, maxChunkLength: 4000 },
-      createHarness: createWhatsAppHarness,
-    });
-  });
-
-  describe("zalo", () => {
-    installChannelOutboundPayloadContractSuite({
-      channel: "zalo",
-      chunking: { mode: "split", longTextLength: 3000, maxChunkLength: 2000 },
-      createHarness: createZaloHarness,
-    });
-  });
-
-  describe("zalouser", () => {
-    installChannelOutboundPayloadContractSuite({
-      channel: "zalouser",
-      chunking: { mode: "passthrough", longTextLength: 3000 },
-      createHarness: createZalouserHarness,
-    });
-  });
-
-  describe("direct-text-media", () => {
-    installChannelOutboundPayloadContractSuite({
-      channel: "imessage",
+      channel: "direct-text-media",
       chunking: { mode: "split", longTextLength: 5000, maxChunkLength: 4000 },
       createHarness: createDirectTextMediaHarness,
     });
+  });
+});
+
+const scopedMediaConfig: OpenClawConfig = {
+  agents: { defaults: { mediaMaxMb: 4 } },
+  channels: {
+    "media-limit-fixture": {
+      mediaMaxMb: 2,
+      accounts: {
+        default: { mediaMaxMb: 3 },
+        office: { mediaMaxMb: 1 },
+        "office-east": { mediaMaxMb: 5 },
+        zero: { mediaMaxMb: 0 },
+        nan: { mediaMaxMb: Number.NaN },
+        text: { mediaMaxMb: "1" },
+      },
+    },
+  },
+};
+
+const mediaLimitCases: Array<{
+  name: string;
+  cfg: OpenClawConfig;
+  accountId?: string | null;
+  expected: number | undefined;
+}> = [
+  { name: "no configured limit", cfg: {}, expected: undefined },
+  {
+    name: "agent default only",
+    cfg: { agents: { defaults: { mediaMaxMb: 4 } } },
+    expected: 4194304,
+  },
+  {
+    name: "channel limit before agent default",
+    cfg: scopedMediaConfig,
+    accountId: "missing",
+    expected: 2097152,
+  },
+  { name: "omitted account selects default", cfg: scopedMediaConfig, expected: 3145728 },
+  {
+    name: "null account selects default",
+    cfg: scopedMediaConfig,
+    accountId: null,
+    expected: 3145728,
+  },
+  {
+    name: "blank account selects default",
+    cfg: scopedMediaConfig,
+    accountId: "  ",
+    expected: 3145728,
+  },
+  {
+    name: "account limit before channel limit",
+    cfg: scopedMediaConfig,
+    accountId: "office",
+    expected: 1048576,
+  },
+  {
+    name: "trimmed lowercase account",
+    cfg: scopedMediaConfig,
+    accountId: " OFFICE ",
+    expected: 1048576,
+  },
+  {
+    name: "canonicalized account key",
+    cfg: scopedMediaConfig,
+    accountId: " Office / East ",
+    expected: 5242880,
+  },
+  // These characterize programmatic inputs, not configuration-schema acceptance.
+  {
+    name: "zero account limit falls through to agent default",
+    cfg: scopedMediaConfig,
+    accountId: "zero",
+    expected: 4194304,
+  },
+  {
+    name: "NaN account limit falls through to agent default",
+    cfg: scopedMediaConfig,
+    accountId: "nan",
+    expected: 4194304,
+  },
+  {
+    name: "non-number account limit falls through to channel",
+    cfg: scopedMediaConfig,
+    accountId: "text",
+    expected: 2097152,
+  },
+  {
+    name: "zero channel limit falls through to agent default",
+    cfg: {
+      agents: { defaults: { mediaMaxMb: 4 } },
+      channels: { "media-limit-fixture": { mediaMaxMb: 0 } },
+    },
+    expected: 4194304,
+  },
+  {
+    name: "NaN channel limit falls through to agent default",
+    cfg: {
+      agents: { defaults: { mediaMaxMb: 4 } },
+      channels: { "media-limit-fixture": { mediaMaxMb: Number.NaN } },
+    },
+    expected: 4194304,
+  },
+  {
+    name: "zero agent default is absent",
+    cfg: { agents: { defaults: { mediaMaxMb: 0 } } },
+    expected: undefined,
+  },
+  {
+    name: "NaN agent default is absent",
+    cfg: { agents: { defaults: { mediaMaxMb: Number.NaN } } },
+    expected: undefined,
+  },
+  {
+    name: "non-record channel section falls through to agent default",
+    cfg: { agents: { defaults: { mediaMaxMb: 4 } }, channels: { "media-limit-fixture": [] } },
+    expected: 4194304,
+  },
+  {
+    name: "fractional channel limit retains byte conversion",
+    cfg: { channels: { "media-limit-fixture": { mediaMaxMb: 0.5 } } },
+    expected: 524288,
+  },
+  {
+    name: "non-number channel limit falls through to agent default",
+    cfg: {
+      agents: { defaults: { mediaMaxMb: 4 } },
+      channels: { "media-limit-fixture": { mediaMaxMb: "2" } },
+    },
+    expected: 4194304,
+  },
+];
+
+describe("scoped channel media limits", () => {
+  it.each(mediaLimitCases)("$name", ({ name: _name, expected, ...input }) => {
+    const resolveLimit = createScopedChannelMediaMaxBytesResolver("media-limit-fixture");
+    expect(resolveLimit(input)).toBe(expected);
+  });
+
+  it("reads the configuration supplied to each call of the same resolver", () => {
+    const resolveLimit = createScopedChannelMediaMaxBytesResolver("media-limit-fixture");
+    expect(resolveLimit({ cfg: { channels: { "media-limit-fixture": { mediaMaxMb: 1 } } } })).toBe(
+      1048576,
+    );
+    expect(resolveLimit({ cfg: { channels: { "media-limit-fixture": { mediaMaxMb: 2 } } } })).toBe(
+      2097152,
+    );
+  });
+
+  it("carries selected limits and unchanged text/media options to the sender", async () => {
+    const cfg = scopedMediaConfig;
+    const textOptions = { kind: "text" };
+    const mediaOptions = { kind: "media" };
+    const send = vi.fn(async (_to: string, _text: string, _options: { kind: string }) => ({
+      messageId: "fixture-message",
+    }));
+    type BuilderInput = Parameters<
+      Parameters<typeof createDirectTextMediaOutbound>[0]["buildTextOptions"]
+    >[0];
+    const built: BuilderInput[] = [];
+    const outbound = createDirectTextMediaOutbound({
+      channel: "media-limit-fixture",
+      resolveSender: () => send,
+      resolveMaxBytes: createScopedChannelMediaMaxBytesResolver("media-limit-fixture"),
+      buildTextOptions: (options) => {
+        built.push(options);
+        return textOptions;
+      },
+      buildMediaOptions: (options) => {
+        built.push(options);
+        return mediaOptions;
+      },
+    });
+    const sendText = outbound.sendText;
+    const sendMedia = outbound.sendMedia;
+    if (!sendText || !sendMedia) {
+      throw new Error("Expected direct text and media send operations");
+    }
+    const readFile = vi.fn(async () => Buffer.from("unused"));
+    const legacyReadFile = vi.fn(async () => Buffer.from("unused-legacy"));
+    const roots = ["/tmp/media-limit-canonical-fixture"];
+    const legacyRoots = ["/tmp/media-limit-legacy-fixture"];
+    const mediaAccess = { localRoots: roots, readFile, workspaceDir: "/tmp/media-limit-workspace" };
+    const context = { cfg, to: "fixture-recipient", accountId: " OFFICE ", replyToId: "reply-1" };
+
+    const textResult = await sendText({ ...context, text: "text" });
+    const mediaResult = await sendMedia({
+      ...context,
+      text: "caption",
+      mediaUrl: "https://example.test/canonical.png",
+      mediaAccess,
+      mediaLocalRoots: legacyRoots,
+      mediaReadFile: legacyReadFile,
+    });
+    const legacyResult = await sendMedia({
+      ...context,
+      text: "legacy caption",
+      mediaUrl: "https://example.test/legacy.png",
+      mediaLocalRoots: legacyRoots,
+      mediaReadFile: legacyReadFile,
+    });
+
+    expect(built).toStrictEqual([
+      {
+        cfg,
+        mediaUrl: undefined,
+        mediaAccess: undefined,
+        mediaLocalRoots: undefined,
+        mediaReadFile: undefined,
+        accountId: " OFFICE ",
+        replyToId: "reply-1",
+        maxBytes: 1048576,
+      },
+      {
+        cfg,
+        mediaUrl: "https://example.test/canonical.png",
+        mediaAccess,
+        mediaLocalRoots: roots,
+        mediaReadFile: readFile,
+        accountId: " OFFICE ",
+        replyToId: "reply-1",
+        maxBytes: 1048576,
+      },
+      {
+        cfg,
+        mediaUrl: "https://example.test/legacy.png",
+        mediaAccess: { localRoots: legacyRoots, readFile: legacyReadFile },
+        mediaLocalRoots: legacyRoots,
+        mediaReadFile: legacyReadFile,
+        accountId: " OFFICE ",
+        replyToId: "reply-1",
+        maxBytes: 1048576,
+      },
+    ]);
+    for (const options of built) {
+      expect(options.cfg).toBe(cfg);
+    }
+    expect(built[1]?.mediaAccess).toBe(mediaAccess);
+    expect(built[1]?.mediaLocalRoots).toBe(roots);
+    expect(built[2]?.mediaLocalRoots).toBe(legacyRoots);
+    expect(send.mock.calls).toStrictEqual([
+      ["fixture-recipient", "text", textOptions],
+      ["fixture-recipient", "caption", mediaOptions],
+      ["fixture-recipient", "legacy caption", mediaOptions],
+    ]);
+    expect(send.mock.calls[0]?.[2]).toBe(textOptions);
+    expect(send.mock.calls[1]?.[2]).toBe(mediaOptions);
+    expect(send.mock.calls[2]?.[2]).toBe(mediaOptions);
+    expect([textResult, mediaResult, legacyResult]).toStrictEqual([
+      { channel: "media-limit-fixture", messageId: "fixture-message" },
+      { channel: "media-limit-fixture", messageId: "fixture-message" },
+      { channel: "media-limit-fixture", messageId: "fixture-message" },
+    ]);
+    expect(readFile).not.toHaveBeenCalled();
+    expect(legacyReadFile).not.toHaveBeenCalled();
   });
 });

@@ -1,162 +1,124 @@
+// Telegram tests cover setup surface plugin behavior.
+import { createTestWizardPrompter } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk/setup";
 import { describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../../../src/config/config.js";
-import {
-  createTestWizardPrompter,
-  runSetupWizardFinalize,
-  runSetupWizardPrepare,
-} from "../../../test/helpers/extensions/setup-wizard.js";
+import { createRuntimeSpies } from "../../test-support/runtime-spies.js";
+import { telegramSetupContract } from "./setup-core.js";
+import { telegramSetupDmPolicy } from "./setup-surface.helpers.js";
 import { telegramSetupWizard } from "./setup-surface.js";
 
-async function runPrepare(cfg: OpenClawConfig, accountId: string) {
-  return await runSetupWizardPrepare({
-    prepare: telegramSetupWizard.prepare,
-    cfg,
-    accountId,
-    options: {},
+describe("Telegram environment setup", () => {
+  it("enables environment credentials without authoring an inline or file token", () => {
+    const input = {
+      cfg: {},
+      accountId: DEFAULT_ACCOUNT_ID,
+      input: { useEnv: true },
+    };
+    expect(telegramSetupContract.validateInput?.(input)).toBeNull();
+    const cfg = telegramSetupContract.applyAccountConfig(input);
+    expect(cfg.channels?.telegram).toEqual({ enabled: true });
+    expect(cfg.channels?.telegram?.botToken).toBeUndefined();
+    expect(cfg.channels?.telegram?.tokenFile).toBeUndefined();
   });
-}
+});
 
-async function runFinalize(cfg: OpenClawConfig, accountId: string) {
-  const note = vi.fn(async () => undefined);
-
-  await runSetupWizardFinalize({
-    finalize: telegramSetupWizard.finalize,
-    cfg,
-    accountId,
-    prompter: createTestWizardPrompter({ note }),
-  });
-
-  return note;
-}
-
-function expectPreparedResult(
-  prepared: Awaited<ReturnType<typeof runPrepare>>,
-): { cfg: OpenClawConfig } & Exclude<Awaited<ReturnType<typeof runPrepare>>, void | undefined> {
-  expect(prepared).toBeDefined();
-  if (
-    !prepared ||
-    typeof prepared !== "object" ||
-    !("cfg" in prepared) ||
-    prepared.cfg === undefined
-  ) {
-    throw new Error("Expected prepare result with cfg");
-  }
-  return prepared as { cfg: OpenClawConfig } & Exclude<
-    Awaited<ReturnType<typeof runPrepare>>,
-    void | undefined
-  >;
-}
-
-describe("telegramSetupWizard.prepare", () => {
-  it('adds groups["*"].requireMention=true for fresh setups', async () => {
-    const prepared = expectPreparedResult(
-      await runPrepare(
-        {
-          channels: {
-            telegram: {
-              botToken: "tok",
-            },
+describe("telegramSetupWizard preparation", () => {
+  it.each([
+    { authored: undefined, expected: true },
+    { authored: false, expected: false },
+  ])("prepares wildcard mention gating with authored=$authored", async ({ authored, expected }) => {
+    const result = await telegramSetupWizard.prepare?.({
+      cfg: {
+        channels: {
+          telegram: {
+            botToken: "tok",
+            ...(authored !== undefined ? { groups: { "*": { requireMention: authored } } } : {}),
           },
         },
-        DEFAULT_ACCOUNT_ID,
-      ),
-    );
-
-    expect(prepared.cfg.channels?.telegram?.groups).toEqual({
-      "*": { requireMention: true },
+      },
+      accountId: DEFAULT_ACCOUNT_ID,
+      credentialValues: {},
+      runtime: createRuntimeSpies(),
+      prompter: createTestWizardPrompter(),
     });
+
+    expect(result?.cfg?.channels?.telegram?.groups?.["*"]?.requireMention).toBe(expected);
+  });
+});
+
+describe("telegramSetupDmPolicy", () => {
+  it("opens a named account with inherited root allowFrom", () => {
+    const next = telegramSetupDmPolicy.setPolicy(
+      {
+        channels: {
+          telegram: {
+            dmPolicy: "allowlist",
+            allowFrom: ["123"],
+            accounts: { alerts: { botToken: "tok" } },
+          },
+        },
+      },
+      "open",
+      "alerts",
+    );
+    expect(next.channels?.telegram?.accounts?.alerts).toMatchObject({
+      dmPolicy: "open",
+      allowFrom: ["123", "*"],
+    });
+    expect(next.channels?.telegram?.dmPolicy).toBe("allowlist");
+    expect(next.channels?.telegram?.allowFrom).toEqual(["123"]);
   });
 
-  it("preserves an explicit wildcard group mention setting", async () => {
-    const prepared = expectPreparedResult(
-      await runPrepare(
-        {
-          channels: {
-            telegram: {
-              botToken: "tok",
-              groups: {
-                "*": { requireMention: false },
-              },
+  it("writes omitted-account policy to the configured default without changing root or siblings", () => {
+    const next = telegramSetupDmPolicy.setPolicy(
+      {
+        channels: {
+          telegram: {
+            defaultAccount: "alerts",
+            dmPolicy: "pairing",
+            allowFrom: ["123"],
+            accounts: {
+              alerts: { botToken: "tok-alerts", dmPolicy: "allowlist" },
+              work: { botToken: "tok-work", dmPolicy: "disabled", allowFrom: ["456"] },
             },
           },
         },
-        DEFAULT_ACCOUNT_ID,
-      ),
+      },
+      "open",
     );
-
-    expect(prepared.cfg.channels?.telegram?.groups).toEqual({
-      "*": { requireMention: false },
+    expect(next.channels?.telegram?.accounts?.alerts).toMatchObject({
+      dmPolicy: "open",
+      allowFrom: ["123", "*"],
+    });
+    expect(next.channels?.telegram?.dmPolicy).toBe("pairing");
+    expect(next.channels?.telegram?.allowFrom).toEqual(["123"]);
+    expect(next.channels?.telegram?.accounts?.work).toEqual({
+      botToken: "tok-work",
+      dmPolicy: "disabled",
+      allowFrom: ["456"],
     });
   });
 });
 
-describe("telegramSetupWizard.finalize", () => {
-  it("shows global config commands for the default account", async () => {
-    const note = await runFinalize(
-      {
-        channels: {
-          telegram: {
-            botToken: "tok",
-          },
-        },
-      },
-      DEFAULT_ACCOUNT_ID,
-    );
+describe("telegramSetupWizard allowFrom", () => {
+  it("accepts numeric sender ids only", async () => {
+    const globalFetch = vi.fn(async () => {
+      throw new Error("global fetch should not be called");
+    });
+    vi.stubGlobal("fetch", globalFetch);
 
-    expect(note).toHaveBeenCalledWith(
-      expect.stringContaining('openclaw config set channels.telegram.dmPolicy "allowlist"'),
-      "Telegram DM access warning",
-    );
-    expect(note).toHaveBeenCalledWith(
-      expect.stringContaining(`openclaw config set channels.telegram.allowFrom '["YOUR_USER_ID"]'`),
-      "Telegram DM access warning",
-    );
-  });
+    try {
+      const resolved = await telegramSetupWizard.allowFrom?.resolveEntries({
+        cfg: {},
+        accountId: DEFAULT_ACCOUNT_ID,
+        credentialValues: { token: "tok" },
+        entries: ["@user"],
+      });
 
-  it("shows account-scoped config commands for named accounts", async () => {
-    const note = await runFinalize(
-      {
-        channels: {
-          telegram: {
-            accounts: {
-              alerts: {
-                botToken: "tok",
-              },
-            },
-          },
-        },
-      },
-      "alerts",
-    );
-
-    expect(note).toHaveBeenCalledWith(
-      expect.stringContaining(
-        'openclaw config set channels.telegram.accounts.alerts.dmPolicy "allowlist"',
-      ),
-      "Telegram DM access warning",
-    );
-    expect(note).toHaveBeenCalledWith(
-      expect.stringContaining(
-        `openclaw config set channels.telegram.accounts.alerts.allowFrom '["YOUR_USER_ID"]'`,
-      ),
-      "Telegram DM access warning",
-    );
-  });
-
-  it("skips the warning when an allowFrom entry already exists", async () => {
-    const note = await runFinalize(
-      {
-        channels: {
-          telegram: {
-            botToken: "tok",
-            allowFrom: ["123"],
-          },
-        },
-      },
-      DEFAULT_ACCOUNT_ID,
-    );
-
-    expect(note).not.toHaveBeenCalled();
+      expect(resolved).toEqual([{ input: "@user", resolved: false, id: null }]);
+      expect(globalFetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

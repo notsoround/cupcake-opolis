@@ -1,38 +1,54 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import { describe, expect, it } from "vitest";
-import { resolveOpenClawAgentDir } from "./agent-paths.js";
-import {
-  installModelsConfigTestHooks,
-  mockCopilotTokenExchangeSuccess,
-  withCopilotGithubToken,
-  withUnsetCopilotTokenEnv,
-  withModelsTempHome as withTempHome,
-} from "./models-config.e2e-harness.js";
-import { ensureOpenClawModelsJson } from "./models-config.js";
+// Verifies GitHub Copilot profile token fallback and implicit provider planning.
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { planModelsJsonForTest } from "./models-config.plan.test-support.js";
+import { resolveImplicitProviders } from "./models-config.providers.js";
+import { createProviderAuthResolver } from "./models-config.providers.secrets.js";
 
-installModelsConfigTestHooks({ restoreFetch: true });
+vi.mock("./model-auth-env.js", () => ({
+  resolveEnvApiKey: () => null,
+}));
 
-async function writeAuthProfiles(agentDir: string, profiles: Record<string, unknown>) {
-  await fs.mkdir(agentDir, { recursive: true });
-  await fs.writeFile(
-    path.join(agentDir, "auth-profiles.json"),
-    JSON.stringify({ version: 1, profiles }, null, 2),
-  );
-}
+vi.mock("./provider-auth-aliases.js", () => ({
+  resolveProviderAuthAliasMap: () => ({}),
+  resolveProviderIdForAuth: (provider: string) => provider.trim().toLowerCase(),
+}));
 
-function expectBearerAuthHeader(fetchMock: { mock: { calls: unknown[][] } }, token: string) {
-  const [, opts] = fetchMock.mock.calls[0] as [string, { headers?: Record<string, string> }];
-  expect(opts?.headers?.Authorization).toBe(`Bearer ${token}`);
-}
+vi.mock("./model-auth-env-vars.js", () => ({
+  listKnownProviderEnvApiKeyNames: () => [],
+  resolveProviderEnvAuthLookupMaps: () => ({
+    aliasMap: {},
+    envCandidateMap: {},
+    authEvidenceMap: {},
+  }),
+}));
+
+vi.mock("../plugins/provider-runtime.js", () => ({
+  resolveProviderSyntheticAuthWithPlugin: () => undefined,
+}));
+
+vi.mock("./models-config.providers.js", () => ({
+  materializeConfiguredProviderCatalogModels: (providers: unknown) => providers,
+  enforceSourceManagedProviderSecrets: ({ providers }: { providers: unknown }) => providers,
+  normalizeProviderCatalogModelsForConfig: (providers: unknown) => providers,
+  normalizeProviders: ({ providers }: { providers: unknown }) => providers,
+  resolveImplicitProviders: vi.fn(),
+}));
+
+const resolveImplicitProvidersMock = vi.mocked(resolveImplicitProviders);
+
+beforeEach(() => {
+  resolveImplicitProvidersMock
+    .mockReset()
+    .mockImplementation(async ({ explicitProviders }) => explicitProviders ?? {});
+});
 
 describe("models-config", () => {
-  it("uses the first github-copilot profile when env tokens are missing", async () => {
-    await withTempHome(async (home) => {
-      await withUnsetCopilotTokenEnv(async () => {
-        const fetchMock = mockCopilotTokenExchangeSuccess();
-        const agentDir = path.join(home, "agent-profiles");
-        await writeAuthProfiles(agentDir, {
+  it("uses the first github-copilot profile when env tokens are missing", () => {
+    const auth = createProviderAuthResolver(
+      {},
+      {
+        version: 1,
+        profiles: {
           "github-copilot:alpha": {
             type: "token",
             provider: "github-copilot",
@@ -43,61 +59,62 @@ describe("models-config", () => {
             provider: "github-copilot",
             token: "beta-token",
           },
-        });
+        },
+      },
+    );
 
-        await ensureOpenClawModelsJson({ models: { providers: {} } }, agentDir);
-        expectBearerAuthHeader(fetchMock, "alpha-token");
-      });
+    expect(auth("github-copilot")).toEqual({
+      apiKey: "alpha-token",
+      discoveryApiKey: "alpha-token",
+      mode: "token",
+      source: "profile",
+      profileId: "github-copilot:alpha",
     });
   });
 
-  it("does not override explicit github-copilot provider config", async () => {
-    await withTempHome(async () => {
-      await withCopilotGithubToken("gh-token", async () => {
-        await ensureOpenClawModelsJson({
-          models: {
-            providers: {
-              "github-copilot": {
-                baseUrl: "https://copilot.local",
-                api: "openai-responses",
-                models: [],
-              },
-            },
+  it("keeps a non-empty existing models.json baseUrl when merge mode regenerates the provider", async () => {
+    const kilocodeProvider = {
+      baseUrl: "https://api.kilo.ai/api/gateway/v1",
+      api: "openai-completions" as const,
+      models: [],
+    };
+    const existing = {
+      providers: { kilocode: { ...kilocodeProvider, baseUrl: "https://api.kilo.ai/api/gateway" } },
+    };
+    const plan = await planModelsJsonForTest({
+      cfg: { models: { providers: { kilocode: kilocodeProvider } } },
+      agentDir: "/tmp/openclaw-agent",
+      env: {},
+      existingRaw: `${JSON.stringify(existing, null, 2)}\n`,
+      existingParsed: existing,
+    });
+
+    expect(plan).toEqual({ action: "noop", pluginCatalogWrites: {} });
+  });
+
+  it("uses tokenRef env var when github-copilot profile omits plaintext token", () => {
+    const auth = createProviderAuthResolver(
+      {
+        COPILOT_REF_TOKEN: "token-from-ref-env",
+      },
+      {
+        version: 1,
+        profiles: {
+          "github-copilot:default": {
+            type: "token",
+            provider: "github-copilot",
+            tokenRef: { source: "env", provider: "default", id: "COPILOT_REF_TOKEN" },
           },
-        });
+        },
+      },
+    );
 
-        const agentDir = resolveOpenClawAgentDir();
-        const raw = await fs.readFile(path.join(agentDir, "models.json"), "utf8");
-        const parsed = JSON.parse(raw) as {
-          providers: Record<string, { baseUrl?: string }>;
-        };
-
-        expect(parsed.providers["github-copilot"]?.baseUrl).toBe("https://copilot.local");
-      });
-    });
-  });
-
-  it("uses tokenRef env var when github-copilot profile omits plaintext token", async () => {
-    await withTempHome(async (home) => {
-      await withUnsetCopilotTokenEnv(async () => {
-        const fetchMock = mockCopilotTokenExchangeSuccess();
-        const agentDir = path.join(home, "agent-profiles");
-        process.env.COPILOT_REF_TOKEN = "token-from-ref-env";
-        try {
-          await writeAuthProfiles(agentDir, {
-            "github-copilot:default": {
-              type: "token",
-              provider: "github-copilot",
-              tokenRef: { source: "env", provider: "default", id: "COPILOT_REF_TOKEN" },
-            },
-          });
-
-          await ensureOpenClawModelsJson({ models: { providers: {} } }, agentDir);
-          expectBearerAuthHeader(fetchMock, "token-from-ref-env");
-        } finally {
-          delete process.env.COPILOT_REF_TOKEN;
-        }
-      });
+    expect(auth("github-copilot")).toEqual({
+      apiKey: "COPILOT_REF_TOKEN",
+      discoveryApiKey: "token-from-ref-env",
+      mode: "token",
+      source: "profile",
+      profileId: "github-copilot:default",
     });
   });
 });

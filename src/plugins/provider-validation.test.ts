@@ -1,34 +1,28 @@
 import { describe, expect, it } from "vitest";
+import type { PluginDiagnostic } from "./manifest-types.js";
 import { normalizeRegisteredProvider } from "./provider-validation.js";
-import type { PluginDiagnostic, ProviderPlugin } from "./types.js";
-
-function collectDiagnostics() {
-  const diagnostics: PluginDiagnostic[] = [];
-  return {
-    diagnostics,
-    pushDiagnostic: (diag: PluginDiagnostic) => {
-      diagnostics.push(diag);
-    },
-  };
-}
+import type { ProviderPlugin } from "./types.js";
 
 function makeProvider(overrides: Partial<ProviderPlugin>): ProviderPlugin {
-  return {
-    id: "demo",
-    label: "Demo",
-    auth: [],
-    ...overrides,
-  };
+  return { id: "demo", label: "Demo", auth: [], ...overrides };
+}
+
+function normalizeProviderFixture(provider: ProviderPlugin) {
+  const diagnostics: PluginDiagnostic[] = [];
+  const normalized = normalizeRegisteredProvider({
+    pluginId: "demo-plugin",
+    source: "/tmp/demo/index.ts",
+    provider,
+    pushDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+  });
+  return { provider: normalized, diagnostics };
 }
 
 describe("normalizeRegisteredProvider", () => {
   it("drops invalid and duplicate auth methods, and clears bad wizard method bindings", () => {
-    const { diagnostics, pushDiagnostic } = collectDiagnostics();
-
-    const provider = normalizeRegisteredProvider({
-      pluginId: "demo-plugin",
-      source: "/tmp/demo/index.ts",
-      provider: makeProvider({
+    const primaryAuthRun = async () => ({ profiles: [] });
+    const { provider, diagnostics } = normalizeProviderFixture(
+      makeProvider({
         id: " demo ",
         label: " Demo Provider ",
         aliases: [" alias-one ", "alias-one", ""],
@@ -41,13 +35,21 @@ describe("normalizeRegisteredProvider", () => {
             kind: "custom",
             wizard: {
               choiceId: " demo-primary ",
+              modelTarget: "utility",
+              assistantVisibility: "detected-only",
+              onboardingFeatured: true,
+              modelSelection: {
+                promptWhenAuthChoiceProvided: true,
+                allowKeepCurrent: false,
+              },
               modelAllowlist: {
                 allowedKeys: [" demo/model ", "demo/model"],
                 initialSelections: [" demo/model "],
+                loadCatalog: true,
                 message: " Demo models ",
               },
             },
-            run: async () => ({ profiles: [] }),
+            run: primaryAuthRun,
           },
           {
             id: "primary",
@@ -60,7 +62,9 @@ describe("normalizeRegisteredProvider", () => {
         wizard: {
           setup: {
             choiceId: " demo-choice ",
+            onboardingFeatured: true,
             methodId: " missing ",
+            modelSelection: { promptWhenAuthChoiceProvided: false, allowKeepCurrent: true },
           },
           modelPicker: {
             label: " Demo models ",
@@ -68,39 +72,51 @@ describe("normalizeRegisteredProvider", () => {
           },
         },
       }),
-      pushDiagnostic,
-    });
-
-    expect(provider).toMatchObject({
-      id: "demo",
-      label: "Demo Provider",
-      aliases: ["alias-one"],
-      deprecatedProfileIds: ["demo:legacy"],
-      envVars: ["DEMO_API_KEY"],
-      auth: [
-        {
-          id: "primary",
-          label: "Primary",
-          wizard: {
-            choiceId: "demo-primary",
-            modelAllowlist: {
-              allowedKeys: ["demo/model"],
-              initialSelections: ["demo/model"],
-              message: "Demo models",
+    );
+    expect(provider).toEqual(
+      makeProvider({
+        id: "demo",
+        label: "Demo Provider",
+        aliases: ["alias-one"],
+        deprecatedProfileIds: ["demo:legacy"],
+        envVars: ["DEMO_API_KEY"],
+        auth: [
+          {
+            id: "primary",
+            label: "Primary",
+            kind: "custom",
+            wizard: {
+              choiceId: "demo-primary",
+              modelTarget: "utility",
+              assistantVisibility: "detected-only",
+              onboardingFeatured: true,
+              modelSelection: {
+                promptWhenAuthChoiceProvided: true,
+                allowKeepCurrent: false,
+              },
+              modelAllowlist: {
+                allowedKeys: ["demo/model"],
+                initialSelections: ["demo/model"],
+                loadCatalog: true,
+                message: "Demo models",
+              },
             },
+            run: primaryAuthRun,
+          },
+        ],
+        wizard: {
+          setup: {
+            choiceId: "demo-choice",
+            onboardingFeatured: true,
+            modelSelection: { promptWhenAuthChoiceProvided: false, allowKeepCurrent: true },
+          },
+          modelPicker: {
+            label: "Demo models",
           },
         },
-      ],
-      wizard: {
-        setup: {
-          choiceId: "demo-choice",
-        },
-        modelPicker: {
-          label: "Demo models",
-        },
-      },
-    });
-    expect(diagnostics.map((diag) => ({ level: diag.level, message: diag.message }))).toEqual([
+      }),
+    );
+    expect(diagnostics.map(({ level, message }) => ({ level, message }))).toEqual([
       {
         level: "error",
         message: 'provider "demo" auth method duplicated id "primary"',
@@ -123,12 +139,8 @@ describe("normalizeRegisteredProvider", () => {
   });
 
   it("drops wizard metadata when a provider has no auth methods", () => {
-    const { diagnostics, pushDiagnostic } = collectDiagnostics();
-
-    const provider = normalizeRegisteredProvider({
-      pluginId: "demo-plugin",
-      source: "/tmp/demo/index.ts",
-      provider: makeProvider({
+    const { provider, diagnostics } = normalizeProviderFixture(
+      makeProvider({
         wizard: {
           setup: {
             choiceId: "demo",
@@ -138,42 +150,11 @@ describe("normalizeRegisteredProvider", () => {
           },
         },
       }),
-      pushDiagnostic,
-    });
-
+    );
     expect(provider?.wizard).toBeUndefined();
-    expect(diagnostics.map((diag) => diag.message)).toEqual([
+    expect(diagnostics.map((diagnostic) => diagnostic.message)).toEqual([
       'provider "demo" setup metadata ignored because it has no auth methods',
       'provider "demo" model-picker metadata ignored because it has no auth methods',
-    ]);
-  });
-
-  it("prefers catalog when a provider registers both catalog and discovery", () => {
-    const { diagnostics, pushDiagnostic } = collectDiagnostics();
-
-    const provider = normalizeRegisteredProvider({
-      pluginId: "demo-plugin",
-      source: "/tmp/demo/index.ts",
-      provider: makeProvider({
-        catalog: {
-          run: async () => null,
-        },
-        discovery: {
-          run: async () => ({
-            provider: {
-              baseUrl: "http://127.0.0.1:8000/v1",
-              models: [],
-            },
-          }),
-        },
-      }),
-      pushDiagnostic,
-    });
-
-    expect(provider?.catalog).toBeDefined();
-    expect(provider?.discovery).toBeUndefined();
-    expect(diagnostics.map((diag) => diag.message)).toEqual([
-      'provider "demo" registered both catalog and discovery; using catalog',
     ]);
   });
 });

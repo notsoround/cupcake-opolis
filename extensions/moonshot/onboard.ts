@@ -1,53 +1,39 @@
+// Moonshot setup module handles plugin onboarding behavior.
 import {
-  applyProviderConfigWithDefaultModelPreset,
+  createDefaultModelsPresetAppliers,
   type OpenClawConfig,
 } from "openclaw/plugin-sdk/provider-onboard";
 import {
   buildMoonshotProvider,
   MOONSHOT_BASE_URL,
+  MOONSHOT_CN_BASE_URL,
   MOONSHOT_DEFAULT_MODEL_ID,
+  MOONSHOT_DEFAULT_MODEL_REF,
 } from "./provider-catalog.js";
 
-export const MOONSHOT_CN_BASE_URL = "https://api.moonshot.cn/v1";
-export const MOONSHOT_DEFAULT_MODEL_REF = `moonshot/${MOONSHOT_DEFAULT_MODEL_ID}`;
-
-export function applyMoonshotProviderConfig(cfg: OpenClawConfig): OpenClawConfig {
-  return applyMoonshotProviderConfigWithBaseUrl(cfg, MOONSHOT_BASE_URL);
-}
-
-export function applyMoonshotProviderConfigCn(cfg: OpenClawConfig): OpenClawConfig {
-  return applyMoonshotProviderConfigWithBaseUrl(cfg, MOONSHOT_CN_BASE_URL);
-}
-
-function applyMoonshotProviderConfigWithBaseUrl(
-  cfg: OpenClawConfig,
-  baseUrl: string,
-  primaryModelRef?: string,
-): OpenClawConfig {
-  const defaultModel = buildMoonshotProvider().models[0];
-  if (!defaultModel) {
-    return cfg;
-  }
-
-  return applyProviderConfigWithDefaultModelPreset(cfg, {
-    providerId: "moonshot",
-    api: "openai-completions",
-    baseUrl,
-    defaultModel,
-    defaultModelId: MOONSHOT_DEFAULT_MODEL_ID,
-    aliases: [{ modelRef: MOONSHOT_DEFAULT_MODEL_REF, alias: "Kimi" }],
-    primaryModelRef,
-  });
-}
+const moonshotPresetAppliers = createDefaultModelsPresetAppliers<[string]>({
+  primaryModelRef: MOONSHOT_DEFAULT_MODEL_REF,
+  resolveParams: (cfg: OpenClawConfig, baseUrl: string) => {
+    const defaultModel = buildMoonshotProvider().models.find(
+      ({ id }) => id === MOONSHOT_DEFAULT_MODEL_ID,
+    );
+    return defaultModel
+      ? {
+          providerId: "moonshot",
+          api: "openai-completions",
+          baseUrl,
+          defaultModels: cfg.models?.mode === "replace" ? [defaultModel] : [],
+          defaultModelId: MOONSHOT_DEFAULT_MODEL_ID,
+          aliases: [{ modelRef: MOONSHOT_DEFAULT_MODEL_REF, alias: "Kimi" }],
+        }
+      : null;
+  },
+});
 
 export function applyMoonshotConfig(cfg: OpenClawConfig): OpenClawConfig {
-  return applyMoonshotProviderConfigWithBaseUrl(cfg, MOONSHOT_BASE_URL, MOONSHOT_DEFAULT_MODEL_REF);
+  return moonshotPresetAppliers.applyConfig(cfg, MOONSHOT_BASE_URL);
 }
 
 export function applyMoonshotConfigCn(cfg: OpenClawConfig): OpenClawConfig {
-  return applyMoonshotProviderConfigWithBaseUrl(
-    cfg,
-    MOONSHOT_CN_BASE_URL,
-    MOONSHOT_DEFAULT_MODEL_REF,
-  );
+  return moonshotPresetAppliers.applyConfig(cfg, MOONSHOT_CN_BASE_URL);
 }

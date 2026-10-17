@@ -238,3 +238,50 @@ extensions/discord/assets/embedded-app-sdk.mjs
 
 # Pinned Swift lint/format tools installed by scripts/install-swift-tools.sh
 .build/
+
+# ------------------------------------------------------------------
+# Cupcake: secrets & local data
+# Keep credentials, private keys, local databases, logs and
+# Cupcake runtime state out of the repo.
+# ------------------------------------------------------------------
+
+# Environment files (keep the committed templates)
+.env.*
+!.env.example
+
+# Private keys / certificates
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+# Tracked upstream test fixture (public test cert, no private key)
+!src/proxy-capture/fixtures/*.pem
+
+# Credential / secret JSON blobs
+*secret*.json
+credentials*.json
+# Tracked upstream reference doc (not a secret) - keep it tracked
+!docs/reference/secretref-user-supplied-credentials-matrix.json
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+# Tracked upstream state-corpus test fixtures (synthetic, not secrets)
+!test/fixtures/state-corpus/**/*.sqlite
+!test/fixtures/state-corpus/**/*.key
+
+# Logs (*.log is already ignored upstream above).
+# Root-anchored so ui/src/pages/logs/ source stays tracked.
+/logs/
+# JSONL scoped to repo root + logs: docs/ and vendor/ track real .jsonl data
+/*.jsonl
+/logs/**/*.jsonl
+/data/**/*.jsonl
+
+# Cupcake local runtime state / config
+.cupcake/
+config/thread-routing.json

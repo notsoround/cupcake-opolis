@@ -97,8 +97,10 @@ const APP_ROUTE_DEFINITIONS = {
   devices: { path: "/settings/devices", aliases: ["/nodes"] },
   "cloud-workers": { path: "/settings/cloud-workers" },
   plugin: { path: "/plugin" },
-  // Cupcake nutrition surfaces. /today is the Today home screen's short alias.
-  nutrition: { path: "/nutrition", aliases: ["/today"] },
+  // Cupcake nutrition surfaces. The Today home screen owns the mount root `/`
+  // (it is the landing page); /today and /nutrition keep earlier links working.
+  // Chat stays at /chat, which also restores the persisted session.
+  nutrition: { path: "/", aliases: ["/today", "/nutrition"] },
   receipts: { path: "/receipts" },
 } as const;
 
@@ -580,6 +582,26 @@ export function inferBasePathFromPathname(pathname: string): string {
   }
   const mountRootBase = `/${segments.join("/")}`;
   return isRouteOwnedBasePath(mountRootBase) ? "" : mountRootBase;
+}
+
+/**
+ * The mount root is the Today landing page. Session deep links that predate it
+ * (`/?session=…`, `/#session=…`) still name a conversation, so they keep
+ * opening Chat instead of Today.
+ */
+export function isRootSessionDeepLink(location: RouteLocation, basePath: string): boolean {
+  const normalizedBasePath = normalizeBasePath(basePath);
+  const normalizedPath = normalizePath(location.pathname);
+  const routePath =
+    normalizedBasePath && normalizedPath === normalizedBasePath
+      ? "/"
+      : normalizedBasePath && normalizedPath.startsWith(`${normalizedBasePath}/`)
+        ? normalizedPath.slice(normalizedBasePath.length)
+        : normalizedPath;
+  return (
+    normalizePath(routePath) === "/" &&
+    new URLSearchParams(`${location.search}&${location.hash.slice(1)}`).has("session")
+  );
 }
 
 export function locationForRoute(routeId: RouteId, basePath: string): RouteLocation {

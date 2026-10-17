@@ -4,6 +4,7 @@ import type { RouteLocation, RouteNotFound } from "@openclaw/uirouter";
 import { html, nothing } from "lit";
 import { state } from "lit/decorators.js";
 import type { GatewayBrowserClient } from "../api/gateway.ts";
+import { pathForRoute } from "../app-route-paths.ts";
 import "../components/gateway-url-confirmation.ts";
 import "../components/link-reader-hovercard-registration.ts";
 import { renderLazyElementState, renderLazyViewError } from "../components/lazy-view-error.ts";
@@ -241,7 +242,8 @@ export class OpenClawApp extends OpenClawLightDomElement {
     if (globalThis.history.length > 1) {
       globalThis.history.back();
     } else {
-      globalThis.location.assign(basePath || "/");
+      // The mount root is Today; approval and question documents return to Chat.
+      globalThis.location.assign(pathForRoute("chat", basePath));
     }
   }
 

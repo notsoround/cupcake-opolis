@@ -86,7 +86,9 @@ describe("model setup first-run redirect", () => {
 
   it("recognizes default chat landings without accepting session deep links", () => {
     const cases = [
-      ["/", "", "", "", true],
+      // The mount root is the Today landing page, not a chat landing.
+      ["/", "", "", "", false],
+      ["/openclaw/", "", "", "/openclaw", false],
       ["/chat", "", "", "", true],
       ["/chat", "?session=agent%3Amain%3Amain", "", "", false],
       ["/chat", "", "#session=agent%3Amain%3Amain", "", false],

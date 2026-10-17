@@ -11,6 +11,7 @@ import {
   agentRouteFromPath,
   canonicalPluginTabLocation,
   dynamicRouteFromPath,
+  isRootSessionDeepLink,
   isSessionRouteId,
   pathForAgentPanel,
   pathForRoute,
@@ -239,9 +240,11 @@ export async function startApplicationRouter(
     location = history.location();
   }
   // Single-segment plugin deep links wait for hello before outlet recovery.
+  // Root session deep links predate the Today landing page and still open Chat.
   if (
-    routeIdFromPath(location.pathname, basePath) === null &&
-    !pluginSlugCandidate(location.pathname, basePath)
+    isRootSessionDeepLink(location, basePath) ||
+    (routeIdFromPath(location.pathname, basePath) === null &&
+      !pluginSlugCandidate(location.pathname, basePath))
   ) {
     history.replace({
       ...location,

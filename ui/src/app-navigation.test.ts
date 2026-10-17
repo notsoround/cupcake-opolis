@@ -214,8 +214,13 @@ describe("routeIdFromPath", () => {
     expect(routeIdFromPath("/about")).toBeNull();
   });
 
-  it("leaves root fallback to application startup", () => {
-    expect(routeIdFromPath("/")).toBeNull();
+  it("opens Today at the mount root", () => {
+    expect(routeIdFromPath("/")).toBe("nutrition");
+    expect(routeIdFromPath("/ui", "/ui")).toBe("nutrition");
+    expect(routeIdFromPath("/ui/", "/ui")).toBe("nutrition");
+    expect(routeIdFromPath("/today")).toBe("nutrition");
+    expect(routeIdFromPath("/nutrition")).toBe("nutrition");
+    expect(routeIdFromPath("/chat")).toBe("chat");
   });
 
   it("handles base paths", () => {

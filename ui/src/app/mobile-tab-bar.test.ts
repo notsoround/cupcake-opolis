@@ -36,7 +36,11 @@ describe("mobile tab bar", () => {
       "more",
     ]);
     const nutrition = container.querySelector<HTMLAnchorElement>('[data-mobile-tab="nutrition"]');
-    expect(nutrition?.getAttribute("href")).toBe("/ui/nutrition");
+    // Today owns the mount root; Chat keeps its own route.
+    expect(nutrition?.getAttribute("href")).toBe("/ui/");
+    expect(
+      container.querySelector<HTMLAnchorElement>('[data-mobile-tab="chat"]')?.getAttribute("href"),
+    ).toBe("/ui/chat");
     expect(nutrition?.getAttribute("aria-current")).toBe("page");
     container.querySelector<HTMLElement>('[data-mobile-tab="receipts"]')?.click();
     expect(onNavigate).toHaveBeenCalledWith("receipts");

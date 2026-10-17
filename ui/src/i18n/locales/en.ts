@@ -4604,11 +4604,8 @@ export const en: TranslationMap & {
       caloriesOfTarget: "{consumed} of {target} kcal",
       caloriesRemaining: "{value} kcal left",
       caloriesOver: "{value} kcal over",
-      energyBalance: "Energy balance now",
       deficit: "{value} kcal deficit",
       surplus: "{value} kcal surplus",
-      balanceBasis:
-        "Estimate: {tdee} kcal/day TDEE × {percent}% of the day elapsed = {burned} kcal burned, minus {consumed} kcal eaten so far.",
       sugar: "6pm sugar",
       sugarPending: "Due at 6:00 pm",
       sugarMissing: "No 6pm reading",
@@ -4634,6 +4631,24 @@ export const en: TranslationMap & {
       calendarEmpty: "No meals in this range",
       kcal: "{value} kcal",
       kcalPerDay: "{value} kcal/day",
+    },
+    curve: {
+      title: "Metabolic balance",
+      projected: "By midnight: {value}",
+      prism: "Prism",
+      prismLabel: "Prism accent for the curve",
+      chartLabel:
+        "Net energy since midnight, now {value}. Rises when you eat or buy food; falls with living burn, steps and exercise.",
+      eaten: "Eaten",
+      bought: "Bought",
+      living: "Living",
+      steps: "Steps",
+      stepsValue: "{steps} · −{kcal}",
+      exercise: "Exercise",
+      sampleTag: "Sample",
+      kcalUnit: "kcal",
+      basis:
+        "Living burn is your {tdee} kcal/day TDEE spread over the day. Steps beyond {included} a day and logged exercise count on top. Café and takeout purchases count as eaten; groceries don't.",
     },
     settings: {
       energyTitle: "Energy targets",

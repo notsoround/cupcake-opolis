@@ -21,7 +21,16 @@ import {
   shiftCalendarAnchor,
   type CalendarView,
 } from "./energy-balance.ts";
-import type { GlucoseReading, MealEntry, NutritionTargets } from "./nutrition-adapter.ts";
+import "./metabolic-curve.ts";
+import { buildMetabolicSeries } from "./metabolic-series.ts";
+import type {
+  ExerciseEntry,
+  GlucoseReading,
+  MealEntry,
+  NutritionTargets,
+  Receipt,
+  StepBucket,
+} from "./nutrition-adapter.ts";
 import { nutritionAdapter } from "./nutrition-source.ts";
 import { renderSampleDataNotice } from "./sample-data-notice.ts";
 
@@ -39,6 +48,11 @@ class NutritionPage extends OpenClawLightDomElement {
   @state() private todayMeals: MealEntry[] = [];
   @state() private lastMeal: MealEntry | null = null;
   @state() private targets: NutritionTargets | null = null;
+  @state() private todayReceipts: Receipt[] = [];
+  @state() private todayExercises: ExerciseEntry[] = [];
+  @state() private todaySteps: StepBucket[] = [];
+  /** Bumps whenever logged data is (re)loaded; the curve animates on change. */
+  @state() private dataRevision = 0;
   @state() private glucose: GlucoseReading | null = null;
   @state() private calendarView: CalendarView = "week";
   @state() private calendarAnchor = Date.now();
@@ -76,10 +90,14 @@ class NutritionPage extends OpenClawLightDomElement {
     const adapter = nutritionAdapter();
     const now = Date.now();
     const { dayStart, dayEnd } = localDayBounds(now);
-    const [recent, targets, glucose] = await Promise.all([
+    const today = { start: dayStart, end: dayEnd };
+    const [recent, targets, glucose, receipts, exercises, steps] = await Promise.all([
       adapter.listMeals({ start: now - LAST_MEAL_LOOKBACK_MS, end: dayEnd }),
       adapter.getTargets(),
       adapter.getSixPmGlucose(new Date(now)),
+      adapter.listReceipts(today),
+      adapter.listExercises(today),
+      adapter.listSteps(today),
     ]);
     // A late result from an earlier load must not replace newer state.
     if (generation !== this.todayGeneration) {
@@ -90,6 +108,10 @@ class NutritionPage extends OpenClawLightDomElement {
     this.lastMeal = lastMealBefore(recent, now);
     this.targets = targets;
     this.glucose = glucose;
+    this.todayReceipts = receipts;
+    this.todayExercises = exercises;
+    this.todaySteps = steps;
+    this.dataRevision += 1;
   }
 
   private async loadCalendar() {
@@ -173,30 +195,23 @@ class NutritionPage extends OpenClawLightDomElement {
     </article>`;
   }
 
-  private renderBalance() {
-    const tdee = this.targets?.tdee ?? 0;
-    const balance = estimateEnergyBalance({ meals: this.todayMeals, now: this.now, tdee });
-    const deficit = balance.balance <= 0;
-    return html`<article class="cupcake-card cupcake-card--balance">
-      <h3 class="cupcake-card__label">${t("cupcake.today.energyBalance")}</h3>
-      <p
-        class="cupcake-card__value ${deficit ? "cupcake-card__value--deficit" : "cupcake-card__value--surplus"}"
-      >
-        ${
-          deficit
-            ? t("cupcake.today.deficit", { value: kcal(-balance.balance) })
-            : t("cupcake.today.surplus", { value: kcal(balance.balance) })
-        }
-      </p>
-      <p class="cupcake-card__basis">
-        ${t("cupcake.today.balanceBasis", {
-          tdee: kcal(balance.tdee),
-          percent: String(Math.round(balance.elapsedFraction * 100)),
-          burned: kcal(balance.burnedSoFar),
-          consumed: kcal(balance.consumedSoFar),
-        })}
-      </p>
-    </article>`;
+  private renderCurve() {
+    const series = this.targets
+      ? buildMetabolicSeries({
+          now: this.now,
+          tdee: this.targets.tdee,
+          meals: this.todayMeals,
+          receipts: this.todayReceipts,
+          exercises: this.todayExercises,
+          steps: this.todaySteps,
+        })
+      : null;
+    return html`<openclaw-metabolic-curve
+      class="cupcake-card cupcake-card--curve"
+      .series=${series}
+      .revision=${this.dataRevision}
+      .sampleKind=${nutritionAdapter().kind}
+    ></openclaw-metabolic-curve>`;
   }
 
   private renderSugar() {
@@ -423,9 +438,9 @@ class NutritionPage extends OpenClawLightDomElement {
           </h2>
           <openclaw-accent-heat-toggle></openclaw-accent-heat-toggle>
         </header>
+        ${this.renderCurve()}
         <div class="cupcake-today__grid">
-          ${this.renderLastMeal()} ${this.renderCalories(consumed)} ${this.renderBalance()}
-          ${this.renderSugar()}
+          ${this.renderLastMeal()} ${this.renderCalories(consumed)} ${this.renderSugar()}
         </div>
         ${this.renderQuickLog()} ${this.renderTargets()}
       </section>

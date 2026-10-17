@@ -69,6 +69,25 @@ describe("Today screen", () => {
     expect(element.querySelector(".cupcake-calendar")).not.toBeNull();
   });
 
+  it("renders the live metabolic balance curve with sample-labeled steps and purchases", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const now = new Date(2026, 9, 15, 12, 0).getTime();
+    vi.setSystemTime(now);
+    setNutritionAdapterForTesting(fakeAdapter("sample", now));
+    const element = await mount();
+    const curve = element.querySelector("openclaw-metabolic-curve");
+    expect(curve).not.toBeNull();
+    await (curve as HTMLElement & { updateComplete: Promise<boolean> }).updateComplete;
+    expect(curve?.textContent).toContain("Metabolic balance");
+    expect(curve?.querySelector(".cupcake-curve__line")?.getAttribute("d")).toMatch(
+      /^M[\d.]+,[\d.]+C/,
+    );
+    expect(curve?.querySelector(".cupcake-curve__now")).not.toBeNull();
+    expect(curve?.querySelectorAll(".cupcake-curve__sample")).toHaveLength(2);
+    // Living burn to midnight: 800 deficit now + 1200 more.
+    expect(curve?.textContent).toContain("By midnight: 2,000 kcal deficit");
+  });
+
   it("shows the TDEE basis read-only and links to Settings → Nutrition", async () => {
     setNutritionAdapterForTesting(fakeAdapter("sample", Date.now()));
     const element = await mount();

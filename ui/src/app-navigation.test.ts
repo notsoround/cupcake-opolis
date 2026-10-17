@@ -485,6 +485,7 @@ describe("SIDEBAR_NAV_ROUTES", () => {
       "custodian",
       "profile",
       "appearance",
+      "nutrition-settings",
       "notifications",
       "connection",
       "channels",
@@ -517,7 +518,13 @@ describe("SIDEBAR_NAV_ROUTES", () => {
     const settingsGroups = visibleSettingsNavigationGroups(true);
     const [firstGroup] = settingsGroups;
     expect(firstGroup?.labelKey).toBeNull();
-    expect(firstGroup?.routes).toEqual(["custodian", "profile", "appearance", "notifications"]);
+    expect(firstGroup?.routes).toEqual([
+      "custodian",
+      "profile",
+      "appearance",
+      "nutrition-settings",
+      "notifications",
+    ]);
     for (const group of settingsGroups.slice(1)) {
       expect(group.labelKey).toBeTruthy();
     }

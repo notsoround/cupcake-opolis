@@ -60,6 +60,18 @@ describe("Today screen", () => {
     expect(element.querySelector(".cupcake-calendar")).not.toBeNull();
   });
 
+  it("shows the TDEE basis read-only and links to Settings → Nutrition", async () => {
+    setNutritionAdapterForTesting(fakeAdapter("sample", Date.now()));
+    const element = await mount();
+    expect(element.querySelector("input[name=tdee]")).toBeNull();
+    expect(element.querySelector("input[name=calorieTarget]")).toBeNull();
+    const basis = element.querySelector(".cupcake-targets-basis");
+    expect(basis?.textContent).toContain("Based on TDEE 2,400 kcal/day and a 1,800 kcal target.");
+    expect(
+      basis?.querySelector<HTMLAnchorElement>(".cupcake-targets-basis__link")?.getAttribute("href"),
+    ).toBe("/settings/nutrition");
+  });
+
   it("drops the sample label for a live adapter", async () => {
     setNutritionAdapterForTesting(fakeAdapter("live", Date.now()));
     const element = await mount();

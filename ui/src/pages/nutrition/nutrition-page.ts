@@ -1,11 +1,15 @@
 import "./nutrition.css";
 import "../../components/accent-heat-toggle.ts";
+import { consume } from "@lit/context";
 import { html, nothing } from "lit";
 import { state } from "lit/decorators.js";
 import { styleMap } from "lit/directives/style-map.js";
+import { pathForRoute } from "../../app-route-paths.ts";
+import { applicationContext, type ApplicationContext } from "../../app/context.ts";
 import { icons } from "../../components/icons.ts";
 import { renderSettingsSegmented } from "../../components/settings-ui.ts";
 import { t } from "../../i18n/index.ts";
+import { shouldHandleNavigationClick } from "../../lib/navigation-click.ts";
 import { OpenClawLightDomElement } from "../../lit/openclaw-element.ts";
 import {
   bucketMeals,
@@ -29,6 +33,8 @@ const timeOfDay = (time: number) =>
   new Date(time).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 class NutritionPage extends OpenClawLightDomElement {
+  @consume({ context: applicationContext, subscribe: true })
+  private context?: ApplicationContext;
   @state() private now = Date.now();
   @state() private todayMeals: MealEntry[] = [];
   @state() private lastMeal: MealEntry | null = null;
@@ -115,15 +121,6 @@ class NutritionPage extends OpenClawLightDomElement {
     form.reset();
     this.quickLogStatus = t("cupcake.today.quickLogged", { name: meal.name });
     await Promise.all([this.loadToday(), this.loadCalendar()]);
-  }
-
-  private async submitTargets(event: SubmitEvent) {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget as HTMLFormElement);
-    this.targets = await nutritionAdapter().setTargets({
-      tdee: Number(data.get("tdee")) || undefined,
-      calorieTarget: Number(data.get("calorieTarget")) || undefined,
-    });
   }
 
   private renderLastMeal() {
@@ -254,40 +251,33 @@ class NutritionPage extends OpenClawLightDomElement {
     </form>`;
   }
 
+  /** Read-only basis for the estimates; editing lives in Settings → Nutrition. */
   private renderTargets() {
     const targets = this.targets;
     if (!targets) {
       return nothing;
     }
-    return html`<details class="cupcake-targets">
-      <summary>${t("cupcake.today.targets")}</summary>
-      <form class="cupcake-targets__form" @submit=${this.submitTargets}>
-        <label class="cupcake-field">
-          <span>${t("cupcake.today.tdee")}</span>
-          <input
-            name="tdee"
-            type="number"
-            inputmode="numeric"
-            min="800"
-            max="6000"
-            .value=${String(targets.tdee)}
-          />
-          <small>${t("cupcake.today.tdeeHint")}</small>
-        </label>
-        <label class="cupcake-field">
-          <span>${t("cupcake.today.calorieTarget")}</span>
-          <input
-            name="calorieTarget"
-            type="number"
-            inputmode="numeric"
-            min="500"
-            max="6000"
-            .value=${String(targets.calorieTarget)}
-          />
-        </label>
-        <button type="submit" class="btn">${t("cupcake.today.save")}</button>
-      </form>
-    </details>`;
+    const basePath = this.context?.basePath ?? "";
+    return html`<p class="cupcake-targets-basis">
+      <span>
+        ${t("cupcake.today.targetsBasis", {
+          tdee: kcal(targets.tdee),
+          target: kcal(targets.calorieTarget),
+        })}
+      </span>
+      <a
+        class="cupcake-targets-basis__link"
+        href=${pathForRoute("nutrition-settings", basePath)}
+        @click=${(event: MouseEvent) => {
+          if (!this.context || !shouldHandleNavigationClick(event)) {
+            return;
+          }
+          event.preventDefault();
+          this.context.navigate("nutrition-settings");
+        }}
+        >${icons.settings} ${t("cupcake.today.editTargets")}</a
+      >
+    </p>`;
   }
 
   private renderCalendar() {

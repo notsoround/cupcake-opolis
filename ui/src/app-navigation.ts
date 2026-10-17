@@ -192,7 +192,10 @@ export function settingsSearchTextMatches(value: string, query: string): boolean
 // Management surfaces (sessions, worktrees, activity, memory import) are
 // workspace destinations, not settings; model setup is a subpage of Models.
 const SETTINGS_NAVIGATION_GROUPS = [
-  { labelKey: null, routes: ["custodian", "profile", "appearance", "notifications"] },
+  {
+    labelKey: null,
+    routes: ["custodian", "profile", "appearance", "nutrition-settings", "notifications"],
+  },
   { labelKey: "nav.settingsGroupDevice", routes: ["device", "device-permissions"] },
   {
     labelKey: "nav.settingsGroupConnections",
@@ -224,6 +227,7 @@ const SETTINGS_NAVIGATION_GROUPS = [
 const NON_ADMIN_SETTINGS_ROUTES: ReadonlySet<NavigationRouteId> = new Set([
   "profile",
   "appearance",
+  "nutrition-settings",
   "notifications",
   "connection",
   "channels",
@@ -387,6 +391,7 @@ const NAVIGATION_PRESENTATION: Record<NavigationRouteId, NavigationPresentation>
   "new-session": ["plus", "newSession.title", "newSession.hint"],
   nutrition: navigationPresentation("utensils", "nutrition"),
   receipts: navigationPresentation("receipt", "receipts"),
+  "nutrition-settings": navigationPresentation("utensils", "nutritionSettings"),
 };
 
 export function isSettingsNavigationRoute(routeId: NavigationRouteId): boolean {

@@ -102,6 +102,7 @@ const APP_ROUTE_DEFINITIONS = {
   // Chat stays at /chat, which also restores the persisted session.
   nutrition: { path: "/", aliases: ["/today", "/nutrition"] },
   receipts: { path: "/receipts" },
+  "nutrition-settings": { path: "/settings/nutrition" },
 } as const;
 
 export type RouteId = keyof typeof APP_ROUTE_DEFINITIONS;

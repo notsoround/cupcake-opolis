@@ -232,27 +232,74 @@
   font-size: var(--control-ui-text-xs);
 }
 
-.cupcake-targets {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--card);
-}
-
-.cupcake-targets summary {
+.cupcake-targets-basis {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  min-height: 44px;
-  padding: 0 var(--space-4);
-  color: var(--text);
-  font-weight: 600;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
 }
 
-.cupcake-targets__form {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  align-items: end;
-  gap: var(--space-3);
-  padding: 0 var(--space-4) var(--space-4);
+.cupcake-targets-basis__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 44px;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.cupcake-targets-basis__link:hover {
+  text-decoration: underline;
+}
+
+.cupcake-targets-basis__link svg {
+  width: 1em;
+  height: 1em;
+}
+
+/* Settings → Nutrition */
+.cupcake-settings-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+}
+
+.cupcake-settings-field__input {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.cupcake-settings-field__input .settings-input {
+  width: 7rem;
+  text-align: end;
+}
+
+.cupcake-settings-field__unit {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.cupcake-settings-field__status {
+  min-height: 1lh;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.cupcake-settings-field__status--invalid {
+  color: var(--danger);
+}
+
+@media (max-width: 640px) {
+  .cupcake-settings-field {
+    align-items: flex-start;
+  }
 }
 
 .cupcake-calendar {

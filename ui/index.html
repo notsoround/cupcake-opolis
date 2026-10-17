@@ -107,6 +107,12 @@
           document.documentElement.setAttribute("data-theme-mode", resolvedMode);
           // Plugin semantic styles select on [data-theme-resolved]; keep in lockstep.
           document.documentElement.setAttribute("data-theme-resolved", resolvedMode);
+          // Cupcake accent heat (app/accent-heat.ts owns the key and the runtime sync).
+          var heat = localStorage.getItem("openclaw.control.accentHeat.v1");
+          document.documentElement.setAttribute(
+            "data-accent-heat",
+            heat === "hot" ? "hot" : "calm",
+          );
         } catch (e) {}
       })();
     </script>

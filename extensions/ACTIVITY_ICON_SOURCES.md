@@ -121,6 +121,8 @@ Browser, Canvas, Diffs, and the memory family preserve the approved shapes from 
 
 FaceTime reuses the existing [Voice Call phone glyph](voice-call/assets/activity.svg) byte-for-byte for its realtime voice carrier.
 
+Vapi Call Context reuses the existing [Voice Call phone glyph](voice-call/assets/activity.svg) byte-for-byte for its phone call flow.
+
 Kie reuses the existing [Vydra video glyph](vydra/assets/activity.svg) byte-for-byte for video generation.
 
 QuickJS Code Mode reuses the existing [mxc sandbox glyph](mxc/assets/activity.svg) byte-for-byte for its isolated executor.

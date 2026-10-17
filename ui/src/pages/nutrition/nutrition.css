@@ -951,3 +951,359 @@
     transition: none;
   }
 }
+
+/* ===========================================
+   Talk-to-log exercise + today's exercise feed
+   =========================================== */
+
+.cupcake-card--exercise {
+  display: block;
+  padding: var(--space-3);
+}
+
+.cupcake-exercise {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.cupcake-exercise__trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 56px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 16%, transparent),
+    color-mix(in srgb, var(--accent) 4%, transparent)
+  );
+  color: var(--text-strong);
+  font: inherit;
+  text-align: start;
+  transition:
+    transform var(--duration-slow) var(--cupcake-spring),
+    border-color var(--duration-normal) var(--ease-out),
+    background-color var(--duration-normal) var(--ease-out);
+}
+
+.cupcake-exercise__trigger:hover {
+  border-color: var(--accent);
+}
+
+.cupcake-exercise__trigger:active {
+  transform: scale(0.98);
+}
+
+.cupcake-exercise__trigger:focus-visible,
+.cupcake-exercise__mic:focus-visible,
+.cupcake-exercise__item-undo:focus-visible,
+.cupcake-exercise__input:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.cupcake-exercise__trigger-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--accent-foreground);
+  box-shadow: 0 4px 14px var(--accent-glow);
+}
+
+.cupcake-exercise__trigger-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.cupcake-exercise__trigger-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.cupcake-exercise__trigger-title {
+  font-weight: 600;
+}
+
+.cupcake-exercise__trigger-hint {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.cupcake-exercise__sheet {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: var(--space-2);
+  animation: cupcake-sheet-in var(--duration-slow) var(--cupcake-spring) both;
+}
+
+@keyframes cupcake-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.cupcake-exercise__field {
+  min-width: 0;
+}
+
+.cupcake-exercise__input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  background: var(--bg);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: var(--control-ui-input-text-size);
+}
+
+.cupcake-exercise__mic {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  background: var(--bg);
+  color: var(--accent);
+  transition:
+    background-color var(--duration-normal) var(--ease-out),
+    color var(--duration-normal) var(--ease-out),
+    transform var(--duration-slow) var(--cupcake-spring);
+}
+
+.cupcake-exercise__mic svg {
+  width: 20px;
+  height: 20px;
+}
+
+.cupcake-exercise__mic:active {
+  transform: scale(0.92);
+}
+
+.cupcake-exercise__mic--live {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.cupcake-exercise__mic--live::after {
+  position: absolute;
+  inset: -1px;
+  border: 2px solid var(--accent);
+  border-radius: inherit;
+  content: "";
+  animation: cupcake-mic-ring 1.4s var(--ease-out) infinite;
+}
+
+@keyframes cupcake-mic-ring {
+  from {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+
+.cupcake-exercise__submit {
+  min-height: 44px;
+  border-radius: var(--radius-full);
+}
+
+.cupcake-exercise__close {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.cupcake-exercise__hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.cupcake-exercise__status {
+  min-height: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.cupcake-exercise__status:empty {
+  display: none;
+}
+
+.cupcake-exercise__result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent);
+  border-radius: var(--radius-md);
+  background: var(--ok-subtle);
+  animation: cupcake-sheet-in var(--duration-slow) var(--cupcake-spring) both;
+}
+
+.cupcake-exercise__result-kcal {
+  color: var(--ok);
+  font-size: var(--control-ui-text-md);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.cupcake-exercise__result-detail,
+.cupcake-exercise__result-basis {
+  grid-column: 1;
+  color: var(--text);
+  font-size: var(--control-ui-text-xs);
+}
+
+.cupcake-exercise__result-basis {
+  color: var(--muted);
+}
+
+.cupcake-exercise__undo {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  gap: var(--space-1);
+  min-height: 36px;
+}
+
+.cupcake-exercise__undo svg {
+  width: 14px;
+  height: 14px;
+}
+
+.cupcake-exercise__feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.cupcake-exercise__empty {
+  color: var(--muted);
+}
+
+.cupcake-exercise__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cupcake-exercise__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--control-ui-text-sm);
+  animation: cupcake-sheet-in var(--duration-slow) var(--cupcake-spring-soft) both;
+}
+
+.cupcake-exercise__item:last-child {
+  border-bottom: 0;
+}
+
+.cupcake-exercise__time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cupcake-exercise__description {
+  overflow: hidden;
+  color: var(--text-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cupcake-exercise__kcal {
+  color: var(--ok);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.cupcake-exercise__item-undo {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--muted);
+  transition:
+    background-color var(--duration-normal) var(--ease-out),
+    color var(--duration-normal) var(--ease-out);
+}
+
+.cupcake-exercise__item-undo:hover {
+  background: var(--bg-hover);
+  color: var(--text-strong);
+}
+
+.cupcake-exercise__item-undo svg {
+  width: 16px;
+  height: 16px;
+}
+
+@media (max-width: 640px) {
+  .cupcake-exercise__item-undo {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (max-width: 400px) {
+  .cupcake-exercise__sheet {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .cupcake-exercise__close {
+    grid-row: 1;
+    grid-column: 3;
+  }
+
+  .cupcake-exercise__submit {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cupcake-exercise__sheet,
+  .cupcake-exercise__result,
+  .cupcake-exercise__item,
+  .cupcake-exercise__mic--live::after {
+    animation: none;
+  }
+
+  .cupcake-exercise__trigger,
+  .cupcake-exercise__mic {
+    transition: none;
+  }
+}

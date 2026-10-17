@@ -21,6 +21,8 @@ import {
   shiftCalendarAnchor,
   type CalendarView,
 } from "./energy-balance.ts";
+// Registers <openclaw-exercise-quick-log>, which fires cupcake-exercise-changed.
+import "./exercise-quick-log.ts";
 import "./metabolic-curve.ts";
 import { buildMetabolicSeries } from "./metabolic-series.ts";
 import type {
@@ -439,6 +441,11 @@ class NutritionPage extends OpenClawLightDomElement {
           <openclaw-accent-heat-toggle></openclaw-accent-heat-toggle>
         </header>
         ${this.renderCurve()}
+        <openclaw-exercise-quick-log
+          class="cupcake-card cupcake-card--exercise"
+          .exercises=${this.todayExercises}
+          @cupcake-exercise-changed=${() => void this.loadToday()}
+        ></openclaw-exercise-quick-log>
         <div class="cupcake-today__grid">
           ${this.renderLastMeal()} ${this.renderCalories(consumed)} ${this.renderSugar()}
         </div>

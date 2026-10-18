@@ -1,4 +1,5 @@
 import type { UpdateRecovery } from "../infra/update-recovery.js";
+import { PRODUCT_DISPLAY_NAME } from "./brand.js";
 import type { NodeVersionManager } from "./version-manager-path.js";
 
 export type UpdateRecoveryStep =
@@ -91,7 +92,9 @@ export function formatUpdateActivationTimeoutGuidance(
 
 export const UPDATE_INSTALL_SKIP_GUIDANCE: Readonly<Record<string, string>> = {
   "external-supervisor-update-required":
-    "This Gateway is managed by an external supervisor. Use your server or deployment's update workflow to update OpenClaw and restart the Gateway. The Control UI and `openclaw update` cannot update this installation. No package changes or Gateway restart were attempted.",
+    "This Gateway is managed by an external supervisor. Use your server or deployment's update workflow to update " +
+    PRODUCT_DISPLAY_NAME +
+    " and restart the Gateway. The Control UI and `openclaw update` cannot update this installation. No package changes or Gateway restart were attempted.",
   "container-image-install":
     "Pull or build the target Docker/container image, then redeploy it with the same state/config mounts. No package changes or Gateway restart were attempted.",
   "unmanaged-package-install":

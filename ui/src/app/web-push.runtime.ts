@@ -4,6 +4,7 @@ import type {
   WebPushNotificationPreferences,
 } from "../../../packages/gateway-protocol/src/schema/push.ts";
 import type { GatewayBrowserClient } from "../api/gateway.ts";
+import { BRAND_NAME } from "../lib/brand.ts";
 import { formatUiError } from "../lib/format-error.ts";
 import type { ConnectionBootstrapCoordinator } from "./connection-bootstrap.ts";
 import type { ApplicationGateway } from "./gateway.ts";
@@ -58,7 +59,7 @@ function requirePushManager(registration: ServiceWorkerRegistration): PushManage
   const manager = pushManagerFor(registration);
   if (!manager || typeof manager.subscribe !== "function") {
     throw new Error(
-      "Web Push is unavailable in this browser. On iPhone or iPad, add OpenClaw to the Home Screen and open the installed app.",
+      `Web Push is unavailable in this browser. On iPhone or iPad, add ${BRAND_NAME} to the Home Screen and open the installed app.`,
     );
   }
   return manager;

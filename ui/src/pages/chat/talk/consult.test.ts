@@ -352,7 +352,7 @@ describe("RealtimeTalkSession consult handoff", () => {
         timeoutMs: 120_000,
       });
       expect(submit).toHaveBeenCalledWith("call-1", {
-        result: "OpenClaw finished with no text.",
+        result: "Cupcake finished with no text.",
       });
     } finally {
       vi.useRealTimers();

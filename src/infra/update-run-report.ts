@@ -1,5 +1,6 @@
 import { sliceUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { UPDATE_RUN_PHASES } from "../../packages/gateway-protocol/src/update-run-vocabulary.js";
+import { PRODUCT_DISPLAY_NAME } from "../shared/brand.js";
 import {
   formatUpdateActivationTimeoutGuidance,
   isVerifiedUpdateRollback,
@@ -27,7 +28,7 @@ import { formatUpdateSnapshotCapacity } from "./update-snapshot-capacity.js";
 
 export type UpdateRunReport = { headline: string; lines: string[]; markdown: string };
 
-const IN_PROGRESS_REPORT_PREFIX = "⬆️ OpenClaw update in progress: ";
+const IN_PROGRESS_REPORT_PREFIX = `⬆️ ${PRODUCT_DISPLAY_NAME} update in progress: `;
 const FAILURE_RECOVERY_HINTS: Readonly<Record<string, string>> = {
   "preflight-insufficient-space":
     "Free space on the preflight staging and package-manager store filesystems, then rerun the update.",
@@ -270,30 +271,30 @@ export function renderUpdateRunReport(
   switch (run.status) {
     case "succeeded":
       headline = after
-        ? `✅ OpenClaw updated to ${after}${before ? ` (from ${before})` : ""}.`
-        : "✅ OpenClaw updated.";
+        ? `✅ ${PRODUCT_DISPLAY_NAME} updated to ${after}${before ? ` (from ${before})` : ""}.`
+        : `✅ ${PRODUCT_DISPLAY_NAME} updated.`;
       break;
     case "failed":
       headline = reconciled
-        ? "ℹ️ OpenClaw abandoned update reconciled."
+        ? `ℹ️ ${PRODUCT_DISPLAY_NAME} abandoned update reconciled.`
         : run.reason === LEGACY_UPDATE_RUN_EXPIRED_REASON
-          ? `ℹ️ OpenClaw update abandoned: ${reason}.`
+          ? `ℹ️ ${PRODUCT_DISPLAY_NAME} update abandoned: ${reason}.`
           : runtimeCheckFailed
-            ? "⚠️ OpenClaw could not complete the update. A required system check failed."
-            : `⚠️ OpenClaw ${run.reason === "repair-failed" ? "repair" : "update"} failed: ${reason}.`;
+            ? `⚠️ ${PRODUCT_DISPLAY_NAME} could not complete the update. A required system check failed.`
+            : `⚠️ ${PRODUCT_DISPLAY_NAME} ${run.reason === "repair-failed" ? "repair" : "update"} failed: ${reason}.`;
       break;
     case "skipped":
       headline =
         run.reason === "still-starting"
-          ? `ℹ️ OpenClaw${after ? ` ${after}` : ""} installed; Gateway still starting; readiness unverified; recovery backups retained.`
+          ? `ℹ️ ${PRODUCT_DISPLAY_NAME}${after ? ` ${after}` : ""} installed; Gateway still starting; readiness unverified; recovery backups retained.`
           : run.reason === "gateway-readiness-unverified"
-            ? `ℹ️ OpenClaw${after ? ` ${after}` : ""} installed; Gateway readiness unverified; recovery backups retained.`
+            ? `ℹ️ ${PRODUCT_DISPLAY_NAME}${after ? ` ${after}` : ""} installed; Gateway readiness unverified; recovery backups retained.`
             : run.reason === "doctor-maintenance-pending"
-              ? "ℹ️ OpenClaw repair pending: Doctor maintenance remains unfinished."
-              : `ℹ️ OpenClaw update skipped: ${reason}.`;
+              ? `ℹ️ ${PRODUCT_DISPLAY_NAME} repair pending: Doctor maintenance remains unfinished.`
+              : `ℹ️ ${PRODUCT_DISPLAY_NAME} update skipped: ${reason}.`;
       break;
     case "rolled-back":
-      headline = `↩️ OpenClaw update rolled back to ${after ?? running ?? before ?? "the previous version"}: ${reason}.`;
+      headline = `↩️ ${PRODUCT_DISPLAY_NAME} update rolled back to ${after ?? running ?? before ?? "the previous version"}: ${reason}.`;
       break;
     case "running":
       headline = `${IN_PROGRESS_REPORT_PREFIX}${run.target?.installationMethod === "ocm" ? "managed by OCM" : run.phase}.`;

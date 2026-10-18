@@ -270,7 +270,7 @@ it.each([true, false])(
     });
     const report = renderUpdateRunReport(run);
     expect(report.headline).toBe(
-      "ℹ️ OpenClaw repair pending: Doctor maintenance remains unfinished.",
+      "ℹ️ Cupcake repair pending: Doctor maintenance remains unfinished.",
     );
     expect(report.markdown).toContain(nextAction);
     expect(report.markdown.indexOf(nextAction)).toBeLessThan(report.markdown.indexOf("Details:"));
@@ -364,7 +364,7 @@ it.each([
       if (!inherited) {
         expect(run.reason).toBe(reason);
         expect(renderUpdateRunReport(run).headline).toBe(
-          "⚠️ OpenClaw repair failed: repair-failed.",
+          "⚠️ Cupcake repair failed: repair-failed.",
         );
         expect(renderUpdateRunReport(run).markdown).toContain("diagnose this repair failure");
         const report = await prepareUpdateFailureReport({

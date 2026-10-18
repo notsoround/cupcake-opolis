@@ -1,3 +1,4 @@
+import { PRODUCT_DISPLAY_NAME } from "../shared/brand.js";
 /**
  * Core tool catalog and profile defaults.
  * Drives built-in profile allowlists, group expansion, and UI section metadata
@@ -390,7 +391,7 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
   },
   {
     id: "gateway",
-    description: "Update OpenClaw; read Gateway config/schema when permitted",
+    description: `Update ${PRODUCT_DISPLAY_NAME}; read Gateway config/schema when permitted`,
     sectionId: "automation",
     profiles: ["minimal", "coding", "messaging"],
     includeInOpenClawGroup: true,
@@ -404,7 +405,7 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
   },
   {
     id: "openclaw",
-    description: "Delegate OpenClaw setup and repair",
+    description: `Delegate ${PRODUCT_DISPLAY_NAME} setup and repair`,
     sectionId: "automation",
     profiles: [],
     includeInOpenClawGroup: true,

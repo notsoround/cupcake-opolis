@@ -353,7 +353,7 @@ describe("update run view", () => {
     });
     await element.updateComplete;
     const report = element.querySelector('[aria-label="Update report"]');
-    expect(report?.textContent).toContain("✅ OpenClaw updated to 2026.9.2 (from 2026.9.1).");
+    expect(report?.textContent).toContain("✅ Cupcake updated to 2026.9.2 (from 2026.9.1).");
     expect(report?.textContent).toContain("service running; version verified; channels ready");
     expect(element.querySelectorAll('[data-state="pass"]')).toHaveLength(4);
     expect(element.querySelector('[data-step="repairing"]')).toBeNull();

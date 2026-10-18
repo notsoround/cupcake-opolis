@@ -2631,7 +2631,7 @@ describe("scheduleRestartSentinelWake", () => {
         threadId: "7",
         payloads: [
           {
-            text: "✅ OpenClaw updated.\nFor details, open Settings → Updates in the Control UI or run `openclaw update status` in your terminal.",
+            text: "✅ Cupcake updated.\nFor details, open Settings → Updates in the Control UI or run `openclaw update status` in your terminal.",
           },
         ],
       }),

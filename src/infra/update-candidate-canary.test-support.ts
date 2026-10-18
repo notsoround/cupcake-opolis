@@ -149,7 +149,7 @@ export function registerCanarySnapshotCapacityTests({
       const report = renderUpdateRunReport(updateRunReportInputFromResult(updateResult), {
         nextAction,
       });
-      expect(report.headline).toContain("OpenClaw update failed: candidate-snapshot-failed");
+      expect(report.headline).toContain("Cupcake update failed: candidate-snapshot-failed");
       expect(report.markdown).toContain(
         "Fix candidate-snapshot-failed then run `openclaw update` again.",
       );

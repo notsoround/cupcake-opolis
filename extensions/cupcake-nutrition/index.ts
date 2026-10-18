@@ -18,6 +18,7 @@ export const NUTRITION_METHODS = [
   "nutrition.receipts.list",
   "nutrition.glucose.closest",
   "nutrition.targets.get",
+  "nutrition.outcomes.list",
 ] as const;
 
 export function registerNutritionMethods(api: OpenClawPluginApi, service: NutritionService): void {
@@ -61,6 +62,7 @@ export function registerNutritionMethods(api: OpenClawPluginApi, service: Nutrit
     return service.closestGlucose(range, at);
   });
   register("nutrition.targets.get", () => service.getTargets());
+  register("nutrition.outcomes.list", (params) => service.listOutcomes(parseRange(params)));
 }
 
 export default definePluginEntry({

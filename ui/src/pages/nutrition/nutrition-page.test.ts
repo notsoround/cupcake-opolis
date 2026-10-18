@@ -126,4 +126,22 @@ describe("Today screen", () => {
     expect(alert?.getAttribute("role")).toBe("alert");
     expect(alert?.textContent).toContain("cupcake library timed out");
   });
+
+  it("restores the In your corner shortcuts, Food today and an honest Wins & losses card", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const now = new Date(2026, 9, 15, 12, 0).getTime();
+    vi.setSystemTime(now);
+    setNutritionAdapterForTesting(fakeAdapter("live", now));
+    const element = await mount();
+    const corner = element.querySelector(".cupcake-corner")?.textContent ?? "";
+    for (const label of ["Record a note", "Quick tip", "Food photo", "Wins & losses"]) {
+      expect(corner).toContain(label);
+    }
+    expect(element.textContent).toContain("Food today");
+    expect(element.textContent).toContain("Oatmeal");
+    // No Gateway in tests: the card says it is offline rather than showing scores.
+    const wins = element.querySelector(".cupcake-wins");
+    expect(wins?.textContent).toContain("Wins & losses");
+    expect(wins?.querySelector(".cupcake-wins__scores")).toBeNull();
+  });
 });

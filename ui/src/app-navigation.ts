@@ -7,6 +7,7 @@ import type {
 } from "./app/native-device-settings.ts";
 import type { IconName } from "./components/icons.ts";
 import { i18n, t } from "./i18n/index.ts";
+import { BRAND_NAME } from "./lib/brand.ts";
 
 export type NavigationRouteId = RouteId;
 
@@ -469,15 +470,15 @@ export function titleForRoute(routeId: NavigationRouteId): string {
 /** Window/tab title, markers leftmost because tabs truncate from the right.
  * A disconnected Gateway replaces the approval count (a stale queue is not
  * actionable); titles already ending in the brand
- * ("Ask OpenClaw") skip the suffix so it never reads "… OpenClaw — OpenClaw". */
+ * ("Ask Cupcake") skip the suffix so it never reads "… Cupcake — Cupcake". */
 export function formatDocumentTitle(options: {
   context: string;
   attentionCount?: number;
   gatewayDisconnected?: boolean;
 }): string {
-  const base = options.context.endsWith("OpenClaw")
+  const base = options.context.endsWith(BRAND_NAME)
     ? options.context
-    : `${options.context} — OpenClaw`;
+    : `${options.context} — ${BRAND_NAME}`;
   if (options.gatewayDisconnected) {
     return `(${t("connection.disconnectedTitle")}) ${base}`;
   }

@@ -4,10 +4,11 @@ import type { ControlUiEnvironment } from "../../../src/gateway/control-ui-boots
 import { beginNativeWindowDrag } from "../app/native-window-drag.ts";
 import { controlUiPublicAssetPath } from "../app/public-assets.ts";
 import { t } from "../i18n/index.ts";
+import { BRAND_NAME } from "../lib/brand.ts";
 import { OpenClawLightDomContentsElement } from "../lit/openclaw-element.ts";
 import { icons } from "./icons.ts";
-import { renderKbd, renderShortcutText } from "./kbd.ts";
 import "./tooltip.ts";
+import { renderKbd, renderShortcutText } from "./kbd.ts";
 
 /** Narrow-viewport header: drawer toggle, brand, and command-palette search.
  * Desktop hides it entirely (layout.css) — the sidebar owns navigation there. */
@@ -37,7 +38,7 @@ class AppTopbar extends OpenClawLightDomContentsElement {
             </button>
           </openclaw-tooltip>
           <div class="topnav-shell__content" @mousedown=${beginNativeWindowDrag}>
-            <div class="topbar-brand" aria-label="OpenClaw">
+            <div class="topbar-brand" aria-label=${BRAND_NAME}>
               <img
                 class="topbar-brand__logo"
                 src=${controlUiPublicAssetPath("apple-touch-icon.png", this.resourceBasePath)}
@@ -45,7 +46,7 @@ class AppTopbar extends OpenClawLightDomContentsElement {
                 alt=""
                 aria-hidden="true"
               />
-              <span class="topbar-brand__title">OpenClaw</span>
+              <span class="topbar-brand__title">${BRAND_NAME}</span>
               ${
                 this.environment &&
                 html`<span class="control-ui-environment-pill">${this.environment.label}</span>`

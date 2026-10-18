@@ -10,6 +10,7 @@ import { CONTROL_UI_BUILD_INFO } from "../build-info.ts";
 import { t } from "../i18n/index.ts";
 import { normalizeAgentLabel, resolveAgentTextAvatar } from "../lib/agents/display.ts";
 import { resolveAgentAvatarUrl } from "../lib/avatar.ts";
+import { BRAND_MARK_ASSET, BRAND_NAME } from "../lib/brand.ts";
 import { renderHoverMarquee } from "../lib/hover-marquee.ts";
 import {
   formatKeyboardShortcutCombo,
@@ -117,7 +118,7 @@ function renderSidebarAgentCard(host: AppSidebarRenderHost) {
 }
 
 function renderSidebarWorkspaceHeader(host: AppSidebarRenderHost) {
-  const name = readSidebarNativeGateway()?.name.trim() || "OpenClaw";
+  const name = readSidebarNativeGateway()?.name.trim() || BRAND_NAME;
   const menuOpen = host.sidebarMenus.agentMenuPosition !== null;
   return html`
     <div class="sidebar-workspace-header">
@@ -156,7 +157,7 @@ function renderSidebarWorkspaceHeader(host: AppSidebarRenderHost) {
               >`
             : html`<img
                 class="sidebar-workspace-header__mark"
-                src=${controlUiPublicAssetPath("favicon.svg", host.basePath)}
+                src=${controlUiPublicAssetPath(BRAND_MARK_ASSET, host.basePath)}
                 alt=""
                 aria-hidden="true"
               />`

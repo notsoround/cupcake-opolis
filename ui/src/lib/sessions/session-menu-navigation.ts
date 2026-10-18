@@ -7,6 +7,7 @@ import { t } from "../../i18n/index.ts";
 import type { ChatHistoryResult } from "../../pages/chat/chat-history-snapshot.ts";
 import { buildChatMarkdown } from "../../pages/chat/export.ts";
 import type { SessionSplitHost } from "../../pages/chat/split-layout-types.ts";
+import { BRAND_NAME } from "../brand.ts";
 import { nativeHistoryMessageIdentity } from "../chat/history-message-identity.ts";
 import { copyToClipboard } from "../clipboard.ts";
 import { formatUiError } from "../format-error.ts";
@@ -138,7 +139,7 @@ async function copySessionMarkdown<TRouteId extends string>(
   }
   const assistantName =
     context.agents.state.agentsList?.agents.find((agent) => agent.id === agentId)?.name ??
-    "OpenClaw";
+    BRAND_NAME;
   const markdown = buildChatMarkdown(pages.toReversed().flat(), assistantName);
   if (!markdown) {
     throw new Error(t("chat.commandResults.emptyExport"));

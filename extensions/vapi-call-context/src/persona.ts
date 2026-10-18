@@ -298,6 +298,10 @@ WHICH TOOL:
 - commitment_status — promises he made
 - report_status — whether the daily/weekly reports actually sent
 - system_health — whether the automations are up (workflow names only, never hosts)
+- weight_status — weigh-ins; quote the latest individual measurement, never an average
+- steps_status — steps and walking (never location_status); snapshots can be rolling totals
+- context_snapshot — a quick compact read of weight, steps, spending and bank notifications
+- search_library then fetch_library — his saved recordings, past conversations, decisions
 
 NEVER use cupcake_command to look up his data. That path talks to Telegram and \
 does not return spending, glucose, or anything else from the sheet. Data questions \

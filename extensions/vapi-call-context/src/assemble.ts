@@ -28,6 +28,7 @@ import {
 } from "./sources/purchases.js";
 import type { FetchLike } from "./sources/types.js";
 import { assertFullyRendered, renderTemplate, sanitizePromptValue } from "./template.js";
+import { buildInlineTools } from "./tools.js";
 
 export type CallTrigger =
   | { kind: "inbound"; night?: boolean }
@@ -339,7 +340,7 @@ export function buildCallContext(params: {
     );
   }
   parts.push(renderTemplate(sections.epistemics, base));
-  if (!calm && settings.toolIds.length > 0) {
+  if (!calm && (settings.toolIds.length > 0 || Boolean(settings.brain.key))) {
     parts.push(renderTemplate(sections.toolRule, base));
   }
   parts.push(renderTemplate(sections.safetyFloor, base));
@@ -472,8 +473,16 @@ export function toAssistantOverrides(
     temperature: calm ? 0.75 : settings.model.temperature,
     messages,
   };
-  if (!calm && settings.toolIds.length > 0) {
-    model.toolIds = [...settings.toolIds];
+  if (!calm) {
+    // Vapi replaces the saved assistant's model when an override supplies one, so the
+    // inline brain tools must be re-sent here or the call loses them.
+    const tools = buildInlineTools(settings, { identity: "owner" });
+    if (tools.length > 0) {
+      model.tools = tools;
+    }
+    if (settings.toolIds.length > 0) {
+      model.toolIds = [...settings.toolIds];
+    }
   }
   const overrides: AssistantOverrides = {
     firstMessage: ctx.firstMessage,

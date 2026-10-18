@@ -1,0 +1,15 @@
+{
+  "name": "@openclaw/cupcake-nutrition",
+  "version": "2026.10.4",
+  "private": true,
+  "description": "Cupcake Today: read-only Gateway methods for real logged meals, food purchases, 6pm glucose and targets",
+  "type": "module",
+  "devDependencies": {
+    "@openclaw/plugin-sdk": "workspace:*"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

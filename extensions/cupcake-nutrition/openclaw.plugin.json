@@ -1,0 +1,15 @@
+{
+  "id": "cupcake-nutrition",
+  "categories": ["data-analytics"],
+  "name": "Cupcake Nutrition",
+  "description": "Read-only nutrition.* Gateway methods that feed the Cupcake Today screen from the private food-photo log, bank purchase alerts, Plaid history and owner-reported glucose.",
+  "enabledByDefault": false,
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

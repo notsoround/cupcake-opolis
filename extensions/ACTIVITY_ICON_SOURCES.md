@@ -121,6 +121,8 @@ Browser, Canvas, Diffs, and the memory family preserve the approved shapes from 
 
 FaceTime reuses the existing [Voice Call phone glyph](voice-call/assets/activity.svg) byte-for-byte for its realtime voice carrier.
 
+Cupcake Nutrition reuses the existing [Logbook glyph](logbook/assets/activity.svg) byte-for-byte for its food log.
+
 Vapi Call Context reuses the existing [Voice Call phone glyph](voice-call/assets/activity.svg) byte-for-byte for its phone call flow.
 
 Kie reuses the existing [Vydra video glyph](vydra/assets/activity.svg) byte-for-byte for video generation.

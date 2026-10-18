@@ -4593,7 +4593,14 @@ export const en: TranslationMap & {
     },
     sampleData: "Sample data",
     sampleDataHint:
-      "No nutrition backend is connected yet. These numbers are sample data kept in this browser.",
+      "This Gateway has no Cupcake nutrition backend (cupcake-nutrition plugin). These numbers are sample data kept in this browser.",
+    liveData: "Live",
+    liveDataHint:
+      "Meals from your logged food photos; purchases from bank alerts and Plaid. Unlogged meals are missing. Quick logs and exercise stay in this browser.",
+    liveDataProblem: "Partly unavailable",
+    liveDataProblemHint:
+      "Couldn't load all of your food data ({detail}). Nothing here is made up; missing parts are just empty.",
+    offlineDataHint: "Connecting to the Gateway… your food data appears once it's connected.",
     today: {
       title: "Today",
       lastMeal: "Last meal",
@@ -4689,6 +4696,7 @@ export const en: TranslationMap & {
       empty: "No receipts yet",
       total: "Total {amount}",
       items: "{count} items",
+      bankPurchase: "Card purchase",
     },
   },
 };

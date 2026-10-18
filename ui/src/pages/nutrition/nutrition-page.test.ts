@@ -112,5 +112,18 @@ describe("Today screen", () => {
     setNutritionAdapterForTesting(fakeAdapter("live", Date.now()));
     const element = await mount();
     expect(element.querySelector(".cupcake-sample-badge")).toBeNull();
+    expect(element.querySelector(".cupcake-live-badge")?.textContent).toContain("Live");
+  });
+
+  it("reports an unreachable live source instead of inventing data", async () => {
+    const adapter = {
+      ...fakeAdapter("live", Date.now()),
+      problem: "meals: cupcake library timed out",
+    };
+    setNutritionAdapterForTesting(adapter);
+    const element = await mount();
+    const alert = element.querySelector(".cupcake-sample-notice--problem");
+    expect(alert?.getAttribute("role")).toBe("alert");
+    expect(alert?.textContent).toContain("cupcake library timed out");
   });
 });

@@ -30,7 +30,7 @@ import type {
   Receipt,
   StepBucket,
 } from "./nutrition-adapter.ts";
-import { nutritionAdapter } from "./nutrition-source.ts";
+import { nutritionAdapter, watchNutritionAdapter } from "./nutrition-source.ts";
 import { renderSampleDataNotice } from "./sample-data-notice.ts";
 
 const CLOCK_TICK_MS = 60_000;
@@ -60,6 +60,7 @@ class NutritionPage extends OpenClawLightDomElement {
   private todayGeneration = 0;
   private calendarGeneration = 0;
   private clock: ReturnType<typeof globalThis.setInterval> | null = null;
+  private unwatch: (() => void) | null = null;
 
   override connectedCallback() {
     super.connectedCallback();
@@ -77,11 +78,19 @@ class NutritionPage extends OpenClawLightDomElement {
         void this.loadToday();
       }
     }, CLOCK_TICK_MS);
+    // Real data arrives once the Gateway connects and advertises the
+    // cupcake-nutrition methods; reload whenever the resolved source changes.
+    this.unwatch = watchNutritionAdapter(this.context?.gateway, () => {
+      void this.loadToday();
+      void this.loadCalendar();
+    });
     void this.loadToday();
     void this.loadCalendar();
   }
 
   override disconnectedCallback() {
+    this.unwatch?.();
+    this.unwatch = null;
     globalThis.clearInterval(this.clock ?? undefined);
     this.clock = null;
     this.todayGeneration += 1;
@@ -214,7 +223,7 @@ class NutritionPage extends OpenClawLightDomElement {
       class="cupcake-card cupcake-card--curve"
       .input=${input}
       .revision=${this.dataRevision}
-      .sampleKind=${nutritionAdapter().kind}
+      .sampleKind=${nutritionAdapter().kind === "sample" ? "sample" : "live"}
     ></openclaw-metabolic-curve>`;
   }
 
@@ -431,7 +440,7 @@ class NutritionPage extends OpenClawLightDomElement {
       tdee: 0,
     }).consumedSoFar;
     return html`<div class="cupcake-page">
-      ${renderSampleDataNotice(nutritionAdapter().kind)}
+      ${renderSampleDataNotice(nutritionAdapter())}
       <section class="cupcake-today" aria-labelledby="cupcake-today-title">
         <header class="cupcake-today__header">
           <h2 id="cupcake-today-title" class="cupcake-section-title">

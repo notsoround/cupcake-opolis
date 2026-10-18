@@ -1,7 +1,9 @@
 import "./nutrition.css";
+import { consume } from "@lit/context";
 import { html, nothing } from "lit";
 import { state } from "lit/decorators.js";
 import { titleForRoute } from "../../app-navigation.ts";
+import { applicationContext, type ApplicationContext } from "../../app/context.ts";
 import { shellLayoutTraits } from "../../app/shell-layout-traits.ts";
 import {
   renderSettingsPage,
@@ -16,7 +18,7 @@ import {
   DEFAULT_TDEE_KCAL,
   type NutritionTargets,
 } from "./nutrition-adapter.ts";
-import { nutritionAdapter } from "./nutrition-source.ts";
+import { nutritionAdapter, watchNutritionAdapter } from "./nutrition-source.ts";
 import { renderSampleDataNotice } from "./sample-data-notice.ts";
 
 /** Accepted ranges; matches the old Today inline editor. */
@@ -38,10 +40,13 @@ export function parseNutritionTarget(field: TargetField, raw: string): number | 
 
 /**
  * Settings → Nutrition: the TDEE and calorie target the Today screen uses.
- * Persists through the same NutritionAdapter.setTargets seam as before (the
- * sample adapter keeps them in this browser until a backend exists).
+ * Edits persist in this browser through NutritionAdapter.setTargets; owner-saved
+ * library settings (when set) take precedence on the live adapter.
  */
 class NutritionSettingsPage extends OpenClawLightDomElement {
+  @consume({ context: applicationContext, subscribe: true })
+  private context?: ApplicationContext;
+  private unwatch: (() => void) | null = null;
   @state() private targets: NutritionTargets | null = null;
   @state() private status: { field: TargetField; kind: "saved" | "invalid" } | null = null;
   private loadGeneration = 0;
@@ -49,10 +54,13 @@ class NutritionSettingsPage extends OpenClawLightDomElement {
 
   override connectedCallback() {
     super.connectedCallback();
+    this.unwatch = watchNutritionAdapter(this.context?.gateway, () => void this.load());
     void this.load();
   }
 
   override disconnectedCallback() {
+    this.unwatch?.();
+    this.unwatch = null;
     this.loadGeneration += 1;
     this.saveGeneration += 1;
     super.disconnectedCallback();
@@ -131,7 +139,7 @@ class NutritionSettingsPage extends OpenClawLightDomElement {
       </section>
       ${renderSettingsWorkspace(
         renderSettingsPage([
-          renderSampleDataNotice(nutritionAdapter().kind),
+          renderSampleDataNotice(nutritionAdapter()),
           renderSettingsSection(
             {
               title: t("cupcake.settings.energyTitle"),

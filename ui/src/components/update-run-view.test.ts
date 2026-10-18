@@ -157,7 +157,7 @@ describe("update run view", () => {
       "Preparing the updater",
     );
     expect(element.querySelector(".update-run-view__details")?.textContent).toContain(
-      "Keeping a copy of the current updater so it can finish safely while OpenClaw is replaced.",
+      "Keeping a copy of the current updater so it can finish safely while Cupcake is replaced.",
     );
   });
 
@@ -382,7 +382,7 @@ describe("update run view", () => {
     );
     expect(element.querySelector("img")).toBeNull();
     expect(element.querySelector('[data-step="build"]')?.getAttribute("aria-label")).toBe(
-      "Building OpenClaw: Failed",
+      "Building Cupcake: Failed",
     );
   });
 });

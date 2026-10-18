@@ -227,7 +227,7 @@ const enSettings = {
     setup: "Provider setup",
     setupProvider: "Configure provider",
     setupHint:
-      "Configure a provider for OpenClaw web search. External harnesses may also supply their own search tools.",
+      "Configure a provider for Cupcake web search. External harnesses may also supply their own search tools.",
     configured: "Configured",
     pluginUnavailable: "Enable plugin to use",
     pluginMissing: "Install plugin to use",
@@ -253,7 +253,7 @@ const enSettings = {
     testing: "Searching…",
     query: "Search query",
     queryPlaceholder: "What would you like to find?",
-    queryDefault: "OpenClaw documentation",
+    queryDefault: "Cupcake documentation",
     success: "Search succeeded",
     failure: "Search failed",
     duration: "{ms} ms",
@@ -325,7 +325,7 @@ const enSettings = {
       secret: "Gateway secret",
       secretPlaceholder: "Paste the token or type the password",
       setupCodeHint:
-        "This is a device setup code for the OpenClaw mobile app, not the Gateway secret. Paste it in the app's Gateway settings instead; the Gateway secret comes from openclaw gateway auth-token --show on the Gateway host.",
+        "This is a device setup code for the Cupcake mobile app, not the Gateway secret. Paste it in the app's Gateway settings instead; the Gateway secret comes from openclaw gateway auth-token --show on the Gateway host.",
       secretHint: "Tokens are saved for this tab after connecting. Passwords are never stored.",
       tokenHint: "This Gateway expects its token. Saved for this tab after connecting.",
       passwordHint: "This Gateway expects its password. Passwords are never stored.",
@@ -474,7 +474,7 @@ const enSettings = {
         "This profile is unavailable or does not support project preparation. Refresh and select an eligible profile.",
       cancelBuild: "Cancel build",
       cancelBuildMessage:
-        "Stop this snapshot build and destroy its worker? OpenClaw waits for provider work and cleanup to finish.",
+        "Stop this snapshot build and destroy its worker? Cupcake waits for provider work and cleanup to finish.",
       buildCancelled: "Build canceled",
       dismiss: "Dismiss",
       dismissBuild: "Dismiss failed build",
@@ -569,7 +569,7 @@ const enSettings = {
       idleTimeoutHelp: "Stop an unused worker after this positive Go duration.",
       idleTimeoutPlaceholder: "45m",
       setup: "Setup command",
-      setupHelp: "Optional idempotent shell command run before OpenClaw is installed.",
+      setupHelp: "Optional idempotent shell command run before Cupcake is installed.",
       setupPlaceholder: "command -v node || install-node",
       desktop: "Desktop",
       desktopHelp:
@@ -723,7 +723,7 @@ const enSettings = {
       sourceConfig: "Provider config",
       sourceExternal: "External CLI",
       sourceInherited: "Shared credential",
-      sourceSaved: "Saved in OpenClaw",
+      sourceSaved: "Saved in Cupcake",
     },
     apiKey: {
       label: "API key",
@@ -757,7 +757,7 @@ const enSettings = {
       heading: "Connect a verified AI model",
       signedInNoModels:
         "You're signed in, but this account exposes no usable models. Choose another provider or account to continue.",
-      notConfigured: "Choose a provider and verify the model OpenClaw will use.",
+      notConfigured: "Choose a provider and verify the model Cupcake will use.",
       noModels: "No models available",
       modelRequired: "Model required",
       chooseProvider: "Choose another provider",
@@ -766,7 +766,7 @@ const enSettings = {
       action: "Log out",
       actionFor: "Log out {account}",
       confirm:
-        "Remove the saved sign-in for {provider} from OpenClaw? You can add this account again later.",
+        "Remove the saved sign-in for {provider} from Cupcake? You can add this account again later.",
       loggingOut: "Logging out…",
       done: "Logged out.",
     },
@@ -803,7 +803,7 @@ const enSettings = {
       retryDiscover: "Retry",
       thinkingHelpLabel: "About thinking defaults",
       thinkingHelp:
-        "Sets the global default for new sessions when no session-specific thinking level is set. OpenClaw maps unsupported levels to the closest option supported by the selected model.",
+        "Sets the global default for new sessions when no session-specific thinking level is set. Cupcake maps unsupported levels to the closest option supported by the selected model.",
       thinkingDefaultHelp:
         "Uses the selected model's thinking policy instead of saving a global thinking override.",
       fastModeHelpLabel: "About fast mode defaults",
@@ -877,7 +877,7 @@ const enSettings = {
       installKind: "Install type",
       policyTitle: "Update policy",
       channel: "Release channel",
-      channelDescription: "Choose which OpenClaw release track this Gateway follows.",
+      channelDescription: "Choose which Cupcake release track this Gateway follows.",
       checkForUpdates: "Check for updates",
       checkForUpdatesDescription: "Periodically check for new versions and show update notices.",
       automaticUpdates: "Automatic updates",
@@ -943,7 +943,7 @@ const enSettings = {
   },
   configPage: {
     deviceSettings: {
-      appOnly: "These settings are only available inside the OpenClaw app.",
+      appOnly: "These settings are only available inside the Cupcake app.",
       loading: "Waiting for settings from the app…",
       intro: "App behavior and capabilities on this Mac.",
       introIos: "App behavior and capabilities on this device.",
@@ -960,17 +960,17 @@ const enSettings = {
       showDockIcon: "Show Dock icon",
       iconStyle: "Dock icon",
       iconStyleHint:
-        "Original uses your Mac’s icon style. Other designs follow light/dark mode while OpenClaw runs.",
+        "Original uses your Mac’s icon style. Other designs follow light/dark mode while Cupcake runs.",
       showDockIconHint:
-        "Keep OpenClaw visible in the Dock. When off, windows still show the Dock icon while open.",
+        "Keep Cupcake visible in the Dock. When off, windows still show the Dock icon while open.",
       iconAnimations: "Icon animations",
       iconAnimationsHint: "Enable idle blinks and wiggles on the menu bar icon.",
       launchAtLogin: "Launch at login",
       launchAtLoginUnavailable:
         "Launch at login requires a bundled app without an active app profile.",
-      keepGatewayRunning: "Keep OpenClaw running when the app is closed",
+      keepGatewayRunning: "Keep Cupcake running when the app is closed",
       keepGatewayRunningHint:
-        "Runs the Gateway as a background service so channels and automations keep working after you quit OpenClaw.",
+        "Runs the Gateway as a background service so channels and automations keep working after you quit Cupcake.",
       keepGatewayRunningFailed: "Could not change Gateway hosting.",
       quickChat: "Quick Chat enabled",
       quickChatHint:
@@ -984,9 +984,9 @@ const enSettings = {
       camera: "Allow Camera",
       cameraHint: "Allow the agent to capture a photo or short video via the built-in camera.",
       keepAwake: "Keep awake",
-      keepAwakeHint: "Keep the screen awake while OpenClaw is active.",
+      keepAwakeHint: "Keep the screen awake while Cupcake is active.",
       keepAwakeComputerHint:
-        "Prevent idle sleep while OpenClaw is running. Manual sleep and locking remain available.",
+        "Prevent idle sleep while Cupcake is running. Manual sleep and locking remain available.",
       healthSummary: "Health summaries",
       healthSummaryHint: "Allow the agent to request a health summary from this device.",
       device: "Device",
@@ -1015,7 +1015,7 @@ const enSettings = {
       },
       unattendedDesktop: "Keep computer awake",
       unattendedDesktopHint:
-        "Keep this Mac awake between jobs while it is connected and hosting. Manual lock and logout are still respected; OpenClaw never unlocks the Mac.",
+        "Keep this Mac awake between jobs while it is connected and hosting. Manual lock and logout are still respected; Cupcake never unlocks the Mac.",
       desktopAvailability: "Desktop availability",
       desktopStates: {
         locked: "Locked",
@@ -1034,14 +1034,14 @@ const enSettings = {
       chromeExtensionNotInstalled: "Not installed",
       chromeExtensionUnknown: "Status unavailable",
       chromeExtensionEnableHint:
-        "The extension is installed but not enabled. Open Chrome and approve or enable OpenClaw.",
+        "The extension is installed but not enabled. Open Chrome and approve or enable Cupcake.",
       chromeExtensionStatusUnsupported:
-        "Automatic installation checks require an updated Mac app. Open Chrome to check whether OpenClaw is installed and enabled.",
+        "Automatic installation checks require an updated Mac app. Open Chrome to check whether Cupcake is installed and enabled.",
       chromeExtensionStatusFailed:
-        "Could not check Chrome installation automatically. You can still run setup or refresh status. Make sure the OpenClaw app and CLI are up to date.",
+        "Could not check Chrome installation automatically. You can still run setup or refresh status. Make sure the Cupcake app and CLI are up to date.",
       chromeExtensionSetup: "Set up Chrome on this device",
       chromeExtensionHint:
-        "Prepare the OpenClaw extension on this device, then approve it in Chrome. This does not install on a remote Gateway.",
+        "Prepare the Cupcake extension on this device, then approve it in Chrome. This does not install on a remote Gateway.",
       chromeExtensionPreparing: "Working on this device…",
       chromeExtensionRefresh: "Refresh setup status",
       chromeExtensionVerify: "Verify connection",
@@ -1049,7 +1049,7 @@ const enSettings = {
       chromeExtensionTabsHint:
         "A connected extension does not mean eligible tabs are available. Check tabs on this host and profile in the browser tools; an empty list is different from a disconnected extension.",
       chromeExtensionFailed:
-        "Setup could not finish. Check the OpenClaw CLI on this device with openclaw browser extension setup, then try again.",
+        "Setup could not finish. Check the Cupcake CLI on this device with openclaw browser extension setup, then try again.",
       chromeExtensionPhases: {
         inspection_required: "Setup required on this device.",
         preparing: "Preparing Chrome on this device.",
@@ -1062,10 +1062,10 @@ const enSettings = {
         none: "",
         install: "Choose Set up Chrome on this device to prepare the native host.",
         open_chrome:
-          "Installation requested. Open or restart Chrome on this device and approve OpenClaw.",
-        approve_extension: "Approve OpenClaw in Chrome on this device, then verify the connection.",
+          "Installation requested. Open or restart Chrome on this device and approve Cupcake.",
+        approve_extension: "Approve Cupcake in Chrome on this device, then verify the connection.",
         install_from_store:
-          "Add OpenClaw from the Chrome Web Store on this device, then verify the connection.",
+          "Add Cupcake from the Chrome Web Store on this device, then verify the connection.",
         check_connection: "Choose Verify connection to check this host's Chrome relay.",
         repair_native_host: "Check the local CLI installation, then run setup again.",
         unsupported:
@@ -1076,10 +1076,10 @@ const enSettings = {
         "Copy cookies from a Chrome-family profile into an isolated managed profile.",
       importBrowserLogins: "Import browser logins…",
       cookieSync: "Cookie sync",
-      cookieSyncUnavailable: "Cookie sync requires remote mode with an external OpenClaw CLI.",
+      cookieSyncUnavailable: "Cookie sync requires remote mode with an external Cupcake CLI.",
       cookieSyncEnabled: "Sync cookies to the remote computer",
       cookieSyncHint:
-        "Continuously copy this Mac's logged-in cookies for the domains below into the remote OpenClaw browser profile. Off by default.",
+        "Continuously copy this Mac's logged-in cookies for the domains below into the remote Cupcake browser profile. Off by default.",
       domains: "Domains",
       domainsHint:
         "Cookies are only synced for these hostnames; an empty list means nothing is synced.",
@@ -1144,7 +1144,7 @@ const enSettings = {
       privacy: "Privacy",
       activePresence: "System-wide presence detection",
       activePresenceHint:
-        "OpenClaw activity identifies this Mac without extra permissions. Enable this to also detect activity in other apps. Shares only idle duration, never keys, pointer positions, app names, or window titles. Requires Accessibility.",
+        "Cupcake activity identifies this Mac without extra permissions. Enable this to also detect activity in other apps. Shares only idle duration, never keys, pointer positions, app names, or window titles. Requires Accessibility.",
     },
     deviceTalk: {
       title: "This Mac",
@@ -1318,8 +1318,8 @@ const enSettings = {
       enable: "Enable notifications",
       openSystemSettings: "Open System Settings",
       blockedHint: "Allow notifications in this site's browser permissions.",
-      nativeBlockedHint: "Allow OpenClaw in macOS System Settings > Notifications.",
-      iosInstallRequired: "On iPhone or iPad, use Share > Add to Home Screen, then open OpenClaw.",
+      nativeBlockedHint: "Allow Cupcake in macOS System Settings > Notifications.",
+      iosInstallRequired: "On iPhone or iPad, use Share > Add to Home Screen, then open Cupcake.",
       accountDefaults: "Account defaults",
       installedApp: "This browser or app",
       deliverDevice: "Deliver to this browser or app",
@@ -1357,7 +1357,7 @@ const enSettings = {
         themeDefault: "Theme default",
         themeFace: "{theme} · {face}",
         system: "System",
-        previewCaption: "OpenClaw · A little clarity goes a long way",
+        previewCaption: "Cupcake · A little clarity goes a long way",
         previewProse:
           "Good typography makes room for the conversation. Choose a face that feels comfortable to read.",
         previewCode: 'const greeting = "Hello, world!";',
@@ -1419,8 +1419,8 @@ const enSettings = {
       showTaskProgress: "Show task progress cards",
       showTaskProgressHint:
         "Show task progress in the chat composer. Hiding it does not stop the agent or clear saved progress. Dashboard widgets and session previews are unchanged.",
-      openLinksExternally: "Open links outside OpenClaw",
-      openLinksExternallyHint: "Use your browser instead of the OpenClaw built-in browser.",
+      openLinksExternally: "Open links outside Cupcake",
+      openLinksExternallyHint: "Use your browser instead of the Cupcake built-in browser.",
       openLinksExternallyStorage: "Saved in this browser only.",
       collapseTaskProgress: "Collapse task progress by default on desktop",
       collapseTaskProgressHint:
@@ -1482,7 +1482,7 @@ const enSettings = {
       afterDaysHint:
         "Days since the transcript last changed. Changes apply without a Gateway restart.",
       backupHint:
-        "OpenClaw backups capture archived history with the database. Direct database copies also need the archive files. Missing or damaged archives require recovery from a backup.",
+        "Cupcake backups capture archived history with the database. Direct database copies also need the archive files. Missing or damaged archives require recovery from a backup.",
       advanced: "Advanced session settings",
       runNow: "Run now",
       runHint: "Run one background batch using the saved, applied policy.",
@@ -1515,7 +1515,7 @@ const enSettings = {
     },
   },
   memoryPage: {
-    intro: "Choose how OpenClaw stores, searches, and maintains agent memory.",
+    intro: "Choose how Cupcake stores, searches, and maintains agent memory.",
     tablistLabel: "Memory sections",
     tabs: {
       overview: "Overview",
@@ -1612,7 +1612,7 @@ const enSettings = {
       description:
         "Exactly one memory plugin owns the memory slot. Selecting an engine enables it and disables the others.",
       rowTitle: "Memory engine",
-      openClawMemory: "OpenClaw Memory",
+      openClawMemory: "Cupcake Memory",
       off: "Off",
       unavailable: "Unavailable",
       autoHint: "No engine is pinned in config, so the slot falls back to its default owner.",

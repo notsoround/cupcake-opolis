@@ -10,6 +10,7 @@ import { retryStaleChunkReloadWhenReachable } from "../app/stale-chunk-reload.ts
 import { t } from "../i18n/index.ts";
 import "../lib/toast.ts";
 import { registerLoginEnglish } from "../i18n/locales/en-login.ts";
+import { BRAND_MARK_ASSET, BRAND_NAME } from "../lib/brand.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../lib/external-link.ts";
 import { formatGatewayHost } from "../lib/gateway-host.ts";
 import { classifyGatewaySecret } from "../lib/gateway-secret-shape.ts";
@@ -362,7 +363,7 @@ function renderFormBody(params: { props: LoginGateProps; feedback: LoginFailureF
 
 function renderLoginGate(props: LoginGateProps, refreshAction: RefreshAction) {
   const resourceBasePath = normalizeBasePath(props.resourceBasePath);
-  const faviconSrc = controlUiPublicAssetPath("favicon.svg", resourceBasePath);
+  const faviconSrc = controlUiPublicAssetPath(BRAND_MARK_ASSET, resourceBasePath);
   const feedback = resolveLoginFailureFeedback(props);
   const body =
     feedback?.placement === "status"
@@ -388,7 +389,7 @@ function renderLoginGate(props: LoginGateProps, refreshAction: RefreshAction) {
                 >`
               : html`<img class="login-gate__logo" src=${faviconSrc} alt="" />`
           }
-          <span class="login-gate__brand-name">OpenClaw</span>
+          <span class="login-gate__brand-name">${BRAND_NAME}</span>
         </header>
         ${body}
         ${

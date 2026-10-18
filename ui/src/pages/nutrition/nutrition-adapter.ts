@@ -1,26 +1,20 @@
 /**
  * Nutrition data seam for the Cupcake Today / Nutrition / Receipts surfaces.
  *
- * TODO(cupcake-nutrition-backend): this repo has no nutrition backend yet.
- * The Codex food-log work (nutritionApi.ts / nutritionModel.ts on the
- * unpublished `codex/cupcake-auto-food-log` branch) was never pushed, so the
- * UI talks to this typed interface and ships with `createSampleNutritionAdapter`
- * only. A real implementation should satisfy `NutritionAdapter` (kind: "live")
- * by calling Gateway methods; see the PR description for proposed shapes:
- *   nutrition.meals.list    { start, end }            -> { meals: MealEntry[] }
- *   nutrition.meals.log     QuickLogInput             -> { meal: MealEntry }
- *   nutrition.targets.get / nutrition.targets.set     -> NutritionTargets
- *   nutrition.glucose.daily { day: "YYYY-MM-DD", at: "18:00" } -> GlucoseReading | null
- *   nutrition.receipts.list { start, end }            -> { receipts: Receipt[] }
- *   nutrition.exercise.list / .log / .delete          -> ExerciseEntry[]
- *   activity.steps.list     { start, end }            -> { buckets: StepBucket[] }
- * TODO(cupcake-steps-source): there is no step source in this repo (no
- * HealthKit / Health Connect / wearable bridge). `listSteps` is sample-only.
- * TODO(cupcake-purchase-ledger): there is no purchase ledger (no Plaid or
- * card feed); receipts are sample-only, and only `kind: "prepared"` receipts
- * (ready-to-eat purchases) count toward calories eaten on the Today curve.
- * Everything the sample adapter returns is fabricated and labeled "Sample data"
- * in the UI (`adapter.kind === "sample"`).
+ * The real backend is the `cupcake-nutrition` Gateway plugin
+ * (extensions/cupcake-nutrition), whose read-only methods are consumed by
+ * `createLiveNutritionAdapter` (nutrition-live-adapter.ts):
+ *   nutrition.meals.list      { start, end }      -> { meals }     saved food-photo log
+ *   nutrition.receipts.list   { start, end }      -> { receipts }  bank food purchases + scans
+ *   nutrition.glucose.closest { start, end, at }  -> { reading }   owner-reported glucose
+ *   nutrition.targets.get     {}                  -> { calorieTarget, tdee } (null = unset)
+ * Quick-logged meals, exercise and target edits stay in this browser (the library
+ * gates writes behind owner approval). Open item cupcake-steps-source: there is no step
+ * source yet, so the live adapter reports no steps. Only `kind: "prepared"`
+ * receipts with item calories add to calories eaten on the Today curve.
+ * `createSampleNutritionAdapter` is used only when the Gateway does not advertise
+ * the nutrition methods; everything it returns is fabricated and labeled
+ * "Sample data" in the UI (`adapter.kind === "sample"`).
  */
 
 export type MealEntry = {
@@ -31,7 +25,9 @@ export type MealEntry = {
   /** Epoch milliseconds when the meal was eaten (not when it was logged). */
   eatenAt: number;
   sugarGrams?: number;
-  source: "sample" | "quick-log" | "receipt" | "chat";
+  /** Some item had no resolved nutrition, so `calories` is a floor. */
+  partial?: boolean;
+  source: "sample" | "quick-log" | "receipt" | "chat" | "photo-log";
 };
 
 export type QuickLogInput = { name: string; calories: number; eatenAt?: number };
@@ -59,6 +55,10 @@ export type Receipt = {
   currency: string;
   total: number;
   items: ReceiptItem[];
+  /** Where a live receipt came from; absent for sample receipts. */
+  source?: "bank-alert" | "bank-posted" | "scanned";
+  /** "date" = only the posting date is known (placed at local noon). */
+  timeBasis?: "exact" | "date";
 };
 
 export type TimeRange = { start: number; end: number };
@@ -85,8 +85,13 @@ export type ExerciseLogInput = Omit<ExerciseEntry, "id" | "source" | "performedA
 export type StepBucket = { start: number; end: number; steps: number };
 
 export interface NutritionAdapter {
-  /** "sample" adapters must be labeled as sample data wherever they render. */
-  readonly kind: "sample" | "live";
+  /**
+   * "sample" adapters must be labeled as sample data wherever they render;
+   * "offline" means the Gateway is not connected yet and nothing is shown.
+   */
+  readonly kind: "sample" | "live" | "offline";
+  /** Live only: the latest upstream failure, shown instead of inventing data. */
+  readonly problem?: string | null;
   listMeals(range: TimeRange): Promise<MealEntry[]>;
   logMeal(input: QuickLogInput): Promise<MealEntry>;
   getTargets(): Promise<NutritionTargets>;

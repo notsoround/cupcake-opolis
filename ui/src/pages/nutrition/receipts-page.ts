@@ -1,20 +1,30 @@
 import "./nutrition.css";
-import { html } from "lit";
+import { consume } from "@lit/context";
+import { html, nothing } from "lit";
 import { state } from "lit/decorators.js";
+import { applicationContext, type ApplicationContext } from "../../app/context.ts";
 import { t } from "../../i18n/index.ts";
 import { OpenClawLightDomElement } from "../../lit/openclaw-element.ts";
 import type { Receipt } from "./nutrition-adapter.ts";
-import { nutritionAdapter } from "./nutrition-source.ts";
+import { nutritionAdapter, watchNutritionAdapter } from "./nutrition-source.ts";
 import { renderSampleDataNotice } from "./sample-data-notice.ts";
 
 const RECEIPT_WINDOW_MS = 30 * 86_400_000;
 
 class ReceiptsPage extends OpenClawLightDomElement {
+  @consume({ context: applicationContext, subscribe: true })
+  private context?: ApplicationContext;
   @state() private receipts: Receipt[] | null = null;
   private generation = 0;
+  private unwatch: (() => void) | null = null;
 
   override connectedCallback() {
     super.connectedCallback();
+    this.unwatch = watchNutritionAdapter(this.context?.gateway, () => this.load());
+    this.load();
+  }
+
+  private load() {
     const generation = ++this.generation;
     const now = Date.now();
     void nutritionAdapter()
@@ -27,6 +37,8 @@ class ReceiptsPage extends OpenClawLightDomElement {
   }
 
   override disconnectedCallback() {
+    this.unwatch?.();
+    this.unwatch = null;
     this.generation += 1;
     super.disconnectedCallback();
   }
@@ -34,7 +46,7 @@ class ReceiptsPage extends OpenClawLightDomElement {
   override render() {
     const receipts = this.receipts ?? [];
     return html`<div class="cupcake-page">
-      ${renderSampleDataNotice(nutritionAdapter().kind)}
+      ${renderSampleDataNotice(nutritionAdapter())}
       ${
         this.receipts && receipts.length === 0
           ? html`<p class="cupcake-card__detail">${t("cupcake.receipts.empty")}</p>`
@@ -57,7 +69,14 @@ class ReceiptsPage extends OpenClawLightDomElement {
                       month: "short",
                       day: "numeric",
                     })}
-                    · ${t("cupcake.receipts.items", { count: String(receipt.items.length) })}
+                    ${
+                      receipt.items.length > 0
+                        ? html`·
+                          ${t("cupcake.receipts.items", { count: String(receipt.items.length) })}`
+                        : receipt.source === "bank-alert" || receipt.source === "bank-posted"
+                          ? html`· ${t("cupcake.receipts.bankPurchase")}`
+                          : nothing
+                    }
                   </p>
                   <ul class="cupcake-meal-list">
                     ${receipt.items.map(

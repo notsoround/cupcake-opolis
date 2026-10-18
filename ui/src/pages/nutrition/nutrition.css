@@ -45,6 +45,31 @@
   text-transform: uppercase;
 }
 
+.cupcake-sample-notice--problem {
+  border-style: solid;
+  border-color: var(--warn);
+}
+
+.cupcake-live-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.cupcake-live-badge {
+  padding: 1px var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--radius-full);
+  color: var(--accent);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .cupcake-section-title {
   display: flex;
   align-items: baseline;

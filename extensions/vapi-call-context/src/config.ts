@@ -12,6 +12,8 @@ export const DEFAULT_MODEL_PROVIDER = "xai";
 export const DEFAULT_MODEL = "grok-4.20-0309-non-reasoning";
 export const DEFAULT_LIBRARY_URL = "http://127.0.0.1:8768/cupcake-library";
 export const DEFAULT_VAPI_BASE_URL = "https://api.vapi.ai";
+export const DEFAULT_BRAIN_URL = "https://automate.hales.ai/webhook/cupcake-brain";
+export const DEFAULT_COMMAND_URL = "https://automate.hales.ai/webhook/vapi-cupcake-hook";
 
 /** Locked: every Cupcake voice path speaks with Vapi's in-house Clara v2. */
 export const CUPCAKE_VOICE = Object.freeze({
@@ -70,6 +72,8 @@ export type CallContextSettings = {
   timeZone: string;
   persona: PersonaSettings;
   library: { url: string; key?: string };
+  /** Inline mid-call tools (see tools.ts). Tools are only advertised when `key` is set. */
+  brain: { url?: string; key?: string; commandUrl?: string };
   plaid: { clientId?: string; secret?: string; accessToken?: string; env: string };
   sourceTimeoutMs: number;
   cacheTtlMs: number;
@@ -186,6 +190,11 @@ export function resolveCallContextSettings(env: Env = process.env): CallContextS
     library: {
       url: text(env, "CUPCAKE_LIBRARY_URL") ?? DEFAULT_LIBRARY_URL,
       key: readSecret(env, "CUPCAKE_LIBRARY_KEY", "cupcake-library-key"),
+    },
+    brain: {
+      url: text(env, "CUPCAKE_BRAIN_URL") ?? DEFAULT_BRAIN_URL,
+      key: readSecret(env, "CUPCAKE_BRAIN_KEY", "cupcake-brain-key"),
+      commandUrl: text(env, "CUPCAKE_VAPI_COMMAND_URL") ?? DEFAULT_COMMAND_URL,
     },
     plaid: {
       clientId: readSecret(env, "PLAID_CLIENT_ID", "plaid-client-id"),

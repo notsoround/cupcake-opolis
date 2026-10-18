@@ -14,6 +14,8 @@ EnvironmentFile=/etc/cupcake-vapi-call-context/env
 LoadCredential=vapi-webhook-secret:/etc/cupcake-vapi-call-context/vapi-webhook-secret
 LoadCredential=vapi-api-key:/etc/cupcake-vapi-call-context/vapi-api-key
 LoadCredential=cupcake-library-key:/etc/cupcake-recordings/access-key
+# Shared key the n8n "Cupcake Brain Connector" checks on inline mid-call tools.
+LoadCredential=cupcake-brain-key:/etc/cupcake-vapi-call-context/cupcake-brain-key
 LoadCredential=plaid-client-id:/etc/cupcake-vapi-call-context/plaid-client-id
 LoadCredential=plaid-secret:/etc/cupcake-vapi-call-context/plaid-secret
 LoadCredential=plaid-access-token:/etc/cupcake-vapi-call-context/plaid-access-token

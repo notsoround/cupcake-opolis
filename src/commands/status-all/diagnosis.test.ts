@@ -323,13 +323,13 @@ describe("status-all diagnosis port checks", () => {
     {
       status: "error",
       reason: "managed-service-handoff-failed",
-      headline: "⚠️ OpenClaw update failed: managed-service-handoff-failed.",
+      headline: "⚠️ Cupcake update failed: managed-service-handoff-failed.",
       hint: "Run openclaw triage to diagnose and repair the failed update.",
     },
     {
       status: "skipped",
       reason: "restart-health-pending",
-      headline: "⬆️ OpenClaw update in progress: restarting.",
+      headline: "⬆️ Cupcake update in progress: restarting.",
       hint: "Check progress with openclaw update status.",
     },
   ] as const)(

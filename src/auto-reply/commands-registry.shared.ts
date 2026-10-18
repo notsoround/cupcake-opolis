@@ -1,3 +1,4 @@
+import { PRODUCT_DISPLAY_NAME } from "../shared/brand.js";
 /** Shared command registry builders used by browser-safe and runtime command lists. */
 import { formatFastModeAutoLabel, resolveFastModeModelAutoOnSeconds } from "../shared/fast-mode.js";
 import { COMMAND_ARG_FORMATTERS } from "./commands-args.js";
@@ -212,7 +213,7 @@ export function buildBuiltinChatCommands(
     }),
     defineBuiltinCommand(
       "openclaw",
-      "Run the OpenClaw setup and repair helper.",
+      `Run the ${PRODUCT_DISPLAY_NAME} setup and repair helper.`,
       "management",
       "essential",
       {
@@ -414,18 +415,24 @@ export function buildBuiltinChatCommands(
       argsParsing: "none",
       formatArgs: COMMAND_ARG_FORMATTERS.config,
     }),
-    defineBuiltinCommand("mcp", "Show or set OpenClaw MCP servers.", "management", "power", {
-      modelIndependent: "always",
-      args: [
-        defineCommandArgument("action", "show | get | set | unset", {
-          choices: ["show", "get", "set", "unset"],
-        }),
-        defineCommandArgument("path", "MCP server name"),
-        defineCommandArgument("value", "JSON config for set", { captureRemaining: true }),
-      ],
-      argsParsing: "none",
-      formatArgs: COMMAND_ARG_FORMATTERS.mcp,
-    }),
+    defineBuiltinCommand(
+      "mcp",
+      `Show or set ${PRODUCT_DISPLAY_NAME} MCP servers.`,
+      "management",
+      "power",
+      {
+        modelIndependent: "always",
+        args: [
+          defineCommandArgument("action", "show | get | set | unset", {
+            choices: ["show", "get", "set", "unset"],
+          }),
+          defineCommandArgument("path", "MCP server name"),
+          defineCommandArgument("value", "JSON config for set", { captureRemaining: true }),
+        ],
+        argsParsing: "none",
+        formatArgs: COMMAND_ARG_FORMATTERS.mcp,
+      },
+    ),
     defineBuiltinCommand(
       "plugins",
       "List, show, enable, or disable plugins.",
@@ -469,12 +476,18 @@ export function buildBuiltinChatCommands(
       activeRunSafe: true,
       modelIndependent: "no-args",
     }),
-    defineBuiltinCommand("restart", "Restart OpenClaw.", "tools", "power", {
+    defineBuiltinCommand("restart", `Restart ${PRODUCT_DISPLAY_NAME}.`, "tools", "power", {
       modelIndependent: "no-args",
     }),
-    defineBuiltinCommand("update", "Update OpenClaw and restart.", "tools", "power", {
-      modelIndependent: "no-args",
-    }),
+    defineBuiltinCommand(
+      "update",
+      `Update ${PRODUCT_DISPLAY_NAME} and restart.`,
+      "tools",
+      "power",
+      {
+        modelIndependent: "no-args",
+      },
+    ),
     defineBuiltinCommand("activation", "Set group activation mode.", "management", "power", {
       modelIndependent: (args) => parseActivationCommand(`/activation ${args}`).hasCommand,
       args: [

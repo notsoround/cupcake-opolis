@@ -537,7 +537,7 @@ describe("update status readiness outcome", () => {
     if (unverified) {
       await updateStatusCommand({});
       expect(runtime.log.mock.calls.flat().join("\n")).toContain(
-        "OpenClaw 2026.9.4 installed; Gateway readiness unverified; recovery backups retained.",
+        "Cupcake 2026.9.4 installed; Gateway readiness unverified; recovery backups retained.",
       );
     }
     await updateStatusCommand({ json });

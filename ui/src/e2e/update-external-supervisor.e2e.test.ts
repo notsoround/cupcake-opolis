@@ -61,9 +61,7 @@ suite.define(() => {
         await dialog.getByRole("button", { name: "Update and restart", exact: true }).click();
         await gateway.waitForRequest("update.run");
         const report = dialog.locator(".update-run-view__report");
-        await report
-          .getByText(`ℹ️ OpenClaw update skipped: ${reason}.`, { exact: false })
-          .waitFor();
+        await report.getByText(`ℹ️ Cupcake update skipped: ${reason}.`, { exact: false }).waitFor();
         await page.screenshot({
           path: path.join(proofDir, "refused-update.png"),
           animations: "disabled",

@@ -6,8 +6,9 @@ import { renderSettingsGroup } from "../../components/settings-ui.ts";
 import { t } from "../../i18n/index.ts";
 import { resolveAgentTextAvatar } from "../../lib/agents/display.ts";
 import { resolveAgentAvatarUrl } from "../../lib/avatar.ts";
-import type { IdentityAvatarController } from "../../lib/identity-avatar-loader.ts";
+import { BRAND_NAME } from "../../lib/brand.ts";
 import "../../components/viewer-facepile.ts";
+import type { IdentityAvatarController } from "../../lib/identity-avatar-loader.ts";
 
 export type ProfileHeroProps = {
   user?: AuthenticatedUser | null;
@@ -51,7 +52,7 @@ export function renderProfileHero(props: ProfileHeroProps) {
       <div class="profile-hero__name">${name}</div>
       <div class="profile-hero__handle">
         ${handle ? html`<span class="profile-hero__email">${handle}</span>` : nothing}
-        <span class="profile-hero__badge">OpenClaw</span>
+        <span class="profile-hero__badge">${BRAND_NAME}</span>
       </div>
     </section>
   `);

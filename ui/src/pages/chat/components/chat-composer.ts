@@ -7,6 +7,7 @@ import {
 import "../../../components/tooltip.ts";
 import { t } from "../../../i18n/index.ts";
 import { registerChatGoalsEnglish } from "../../../i18n/locales/en-chat-goals.ts";
+import { BRAND_NAME } from "../../../lib/brand.ts";
 import type { HumanMention } from "../../../lib/chat/chat-types.ts";
 import {
   canSubmitBeforeChatHistory,
@@ -119,7 +120,7 @@ export function renderChatComposer(props: ChatComposerProps) {
   if (state.composerTextarea?.isConnected && state.composerTextarea.value !== visibleDraft) {
     scheduleTextareaHeightAdjustment(state.composerTextarea);
   }
-  const assistantName = props.assistantName || "OpenClaw";
+  const assistantName = props.assistantName || BRAND_NAME;
   const inProgressLabel = props.waitingApproval
     ? t("chat.waitingForApproval")
     : submittedProgress?.sendState === "waiting-model"

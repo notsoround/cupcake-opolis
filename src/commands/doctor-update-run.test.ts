@@ -239,7 +239,7 @@ it.each([
     expect.stringContaining(
       failure.reason === "node-runtime-preflight"
         ? `Reason code: ${failure.reason}`
-        : `OpenClaw update failed: ${failure.reason}.`,
+        : `Cupcake update failed: ${failure.reason}.`,
     ),
     "Update history",
   );

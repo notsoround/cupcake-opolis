@@ -9,6 +9,7 @@ import {
   fetchBankAlerts,
   fetchGlucose,
   fetchLibraryMeals,
+  fetchOutcomes,
   fetchPostedPurchases,
   fetchScannedReceipts,
   fetchTargets,
@@ -17,6 +18,8 @@ import {
   type Upstream,
   type WireGlucose,
   type WireMeal,
+  type WireOutcome,
+  type WireOutcomeCounts,
   type WireReceipt,
   type WireTargets,
 } from "./sources.js";
@@ -28,6 +31,19 @@ export const MEALS_COVERAGE =
   "Saved food photos only. Meals not photographed or logged elsewhere are missing; unknown eaten times are excluded.";
 export const RECEIPTS_COVERAGE =
   "Food & drink bank purchase alerts (last 7 days, swipe time), posted Plaid history before that (posting date only), and scanned receipts. Purchases carry no calories.";
+
+export const OUTCOMES_COVERAGE =
+  "Wins and losses you explicitly asked Cupcake to record (phone, voice or chat). Owner-reported, not independently verified; silence never adds a loss.";
+
+/** America/Chicago calendar day (YYYY-MM-DD) containing `ms`. */
+export function chicagoDate(ms: number): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(ms));
+}
 
 export type TimeRange = { start: number; end: number };
 
@@ -211,6 +227,20 @@ export function createNutritionService(options: NutritionServiceOptions) {
       const reading =
         value.toSorted((a, b) => Math.abs(a.takenAt - at) - Math.abs(b.takenAt - at))[0] ?? null;
       return { reading, ...note };
+    },
+
+    /** Owner-reported wins / losses on the Chicago calendar days intersecting [start, end). */
+    async listOutcomes(
+      range: TimeRange,
+    ): Promise<
+      { entries: WireOutcome[]; counts: WireOutcomeCounts; coverageNote: string } & SourceNote
+    > {
+      const startDate = chicagoDate(range.start);
+      const endDate = chicagoDate(range.end - 1);
+      const { value, ...note } = await cached(`outcomes:${startDate}:${endDate}`, () =>
+        fetchOutcomes(fetchImpl, library, startDate, endDate, settings.timeoutMs),
+      );
+      return { ...value, coverageNote: OUTCOMES_COVERAGE, ...note };
     },
 
     async getTargets(): Promise<WireTargets & SourceNote> {

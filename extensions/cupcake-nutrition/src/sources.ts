@@ -393,3 +393,100 @@ export function fetchPostedPurchases(
     timeoutMs,
   );
 }
+
+// ---------------------------------------------------------------- outcomes
+
+export type WireOutcome = {
+  id: string;
+  /** Owner-reported calendar day (America/Chicago), YYYY-MM-DD. */
+  date: string;
+  title: string;
+  outcome: "win" | "loss" | "unscored";
+  note: string;
+};
+
+export type WireOutcomeCounts = { wins: number; losses: number; unscored: number; total: number };
+
+export function parseOutcome(value: unknown): WireOutcome | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const id = str(value.id, 100);
+  const date =
+    typeof value.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.date)
+      ? value.date
+      : undefined;
+  const outcome =
+    value.outcome === "win" || value.outcome === "loss" || value.outcome === "unscored"
+      ? value.outcome
+      : undefined;
+  if (!id || !date || !outcome) {
+    return undefined;
+  }
+  return {
+    id,
+    date,
+    title:
+      str(value.title, 160) ??
+      (outcome === "win" ? "Win" : outcome === "loss" ? "Loss" : "Outcome"),
+    outcome,
+    note: str(value.note, 600) ?? "",
+  };
+}
+
+const OUTCOME_MAX_PAGES = 4;
+
+/**
+ * Owner-reported personal wins / losses (library `outcome_list`, table
+ * `personal_outcomes`) for inclusive Chicago calendar days, newest first.
+ * Counts come from the library and cover the whole range even when the
+ * entry list is capped.
+ */
+export async function fetchOutcomes(
+  fetchImpl: FetchLike,
+  library: Upstream,
+  startDate: string,
+  endDate: string,
+  timeoutMs: number,
+): Promise<{ entries: WireOutcome[]; counts: WireOutcomeCounts }> {
+  const entries: WireOutcome[] = [];
+  let counts: WireOutcomeCounts | undefined;
+  let cursor: string | undefined;
+  for (let page = 0; page < OUTCOME_MAX_PAGES; page += 1) {
+    const body = await postJson(
+      fetchImpl,
+      library,
+      {
+        action: "outcome_list",
+        start: startDate,
+        end: endDate,
+        limit: 100,
+        ...(cursor ? { cursor } : {}),
+      },
+      timeoutMs,
+    );
+    if (!Array.isArray(body.entries)) {
+      throw new SourceUnavailableError("cupcake library outcome_list returned an unexpected shape");
+    }
+    entries.push(...body.entries.map(parseOutcome).filter((e): e is WireOutcome => Boolean(e)));
+    if (!counts && isRecord(body.counts)) {
+      const c = body.counts;
+      const n = (v: unknown) => Math.max(0, Math.round(finiteNumber(v) ?? 0));
+      counts = { wins: n(c.wins), losses: n(c.losses), unscored: n(c.unscored), total: n(c.total) };
+    }
+    cursor = typeof body.nextCursor === "string" && body.nextCursor ? body.nextCursor : undefined;
+    if (!cursor) {
+      break;
+    }
+  }
+  const tally = (o: WireOutcome["outcome"]) => entries.filter((e) => e.outcome === o).length;
+  return {
+    entries: entries.toSorted((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)),
+    counts: counts ?? {
+      wins: tally("win"),
+      losses: tally("loss"),
+      unscored: tally("unscored"),
+      total: entries.length,
+    },
+  };
+}

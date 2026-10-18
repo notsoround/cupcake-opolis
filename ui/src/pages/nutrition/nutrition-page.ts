@@ -31,10 +31,15 @@ import type {
   StepBucket,
 } from "./nutrition-adapter.ts";
 import { nutritionAdapter, watchNutritionAdapter } from "./nutrition-source.ts";
+import { loadOutcomes, winRate, type OutcomesResult } from "./outcomes-source.ts";
 import { renderSampleDataNotice } from "./sample-data-notice.ts";
 
 const CLOCK_TICK_MS = 60_000;
 const LAST_MEAL_LOOKBACK_MS = 2 * 86_400_000;
+const DAY_MS = 86_400_000;
+const OUTCOME_WINDOWS = ["7", "30", "365"] as const;
+type OutcomeWindow = (typeof OUTCOME_WINDOWS)[number];
+const OUTCOME_LIST_LIMIT = 5;
 
 const kcal = (value: number) => Math.round(value).toLocaleString();
 const timeOfDay = (time: number) =>
@@ -57,6 +62,10 @@ class NutritionPage extends OpenClawLightDomElement {
   @state() private calendarAnchor = Date.now();
   @state() private calendarMeals: MealEntry[] = [];
   @state() private quickLogStatus = "";
+  @state() private outcomes: OutcomesResult | null = null;
+  @state() private outcomeWindow: OutcomeWindow = "7";
+  @state() private openOutcome: string | null = null;
+  private outcomesGeneration = 0;
   private todayGeneration = 0;
   private calendarGeneration = 0;
   private clock: ReturnType<typeof globalThis.setInterval> | null = null;
@@ -83,9 +92,11 @@ class NutritionPage extends OpenClawLightDomElement {
     this.unwatch = watchNutritionAdapter(this.context?.gateway, () => {
       void this.loadToday();
       void this.loadCalendar();
+      void this.loadOutcomes();
     });
     void this.loadToday();
     void this.loadCalendar();
+    void this.loadOutcomes();
   }
 
   override disconnectedCallback() {
@@ -95,6 +106,7 @@ class NutritionPage extends OpenClawLightDomElement {
     this.clock = null;
     this.todayGeneration += 1;
     this.calendarGeneration += 1;
+    this.outcomesGeneration += 1;
     super.disconnectedCallback();
   }
 
@@ -134,6 +146,174 @@ class NutritionPage extends OpenClawLightDomElement {
     if (generation === this.calendarGeneration) {
       this.calendarMeals = meals;
     }
+  }
+
+  private async loadOutcomes() {
+    const generation = ++this.outcomesGeneration;
+    const { dayStart, dayEnd } = localDayBounds(Date.now());
+    const result = await loadOutcomes(this.context?.gateway?.snapshot, {
+      start: dayStart - (Number(this.outcomeWindow) - 1) * DAY_MS,
+      end: dayEnd,
+    });
+    if (generation === this.outcomesGeneration) {
+      this.outcomes = result;
+    }
+  }
+
+  private setOutcomeWindow(days: OutcomeWindow) {
+    this.outcomeWindow = days;
+    this.openOutcome = null;
+    void this.loadOutcomes();
+  }
+
+  /** Opens Chat with a prefilled (unsent) draft; Matt reviews and sends it. */
+  private openChatDraft(draft: string) {
+    this.context?.navigate("chat", { search: `?draft=${encodeURIComponent(draft)}` });
+  }
+
+  private renderCorner() {
+    return html`<section class="cupcake-card cupcake-corner" aria-labelledby="cupcake-corner-title">
+      <span class="cupcake-corner__eyebrow">${t("cupcake.today.cornerEyebrow")}</span>
+      <h3 id="cupcake-corner-title" class="cupcake-corner__title">
+        ${t("cupcake.today.cornerTitle")}
+      </h3>
+      <p class="cupcake-card__detail">${t("cupcake.today.cornerPrompt")}</p>
+      <div class="cupcake-corner__actions">
+        <button
+          type="button"
+          class="btn primary"
+          @click=${() => this.openChatDraft(t("cupcake.today.recordNoteDraft"))}
+        >
+          ${icons.audioLines} ${t("cupcake.today.recordNote")}
+        </button>
+        <button
+          type="button"
+          class="btn"
+          @click=${() => this.openChatDraft(t("cupcake.today.quickTipDraft"))}
+        >
+          ${icons.wandSparkles} ${t("cupcake.today.quickTip")}
+        </button>
+        <button
+          type="button"
+          class="btn"
+          @click=${() => this.openChatDraft(t("cupcake.today.foodPhotoDraft"))}
+        >
+          ${icons.utensils} ${t("cupcake.today.foodPhoto")}
+        </button>
+        <a class="btn" href="#cupcake-wins-title">${icons.star} ${t("cupcake.today.winsLosses")}</a>
+      </div>
+    </section>`;
+  }
+
+  private renderFoodToday() {
+    const meals = this.todayMeals.toSorted((a, b) => b.eatenAt - a.eatenAt);
+    return html`<article class="cupcake-card" aria-labelledby="cupcake-food-today-title">
+      <h3 id="cupcake-food-today-title" class="cupcake-card__label">
+        ${icons.utensils} ${t("cupcake.today.foodToday")}
+      </h3>
+      ${
+        meals.length === 0
+          ? html`<p class="cupcake-card__detail">${t("cupcake.today.noMeals")}</p>`
+          : html`<ul class="cupcake-meal-list">
+              ${meals.map(
+                (meal) => html`<li class="cupcake-meal-list__item">
+                  <span class="cupcake-meal-list__time">${timeOfDay(meal.eatenAt)}</span>
+                  <span class="cupcake-meal-list__name">${meal.name}</span>
+                  <span class="cupcake-meal-list__kcal"
+                    >${t("cupcake.today.kcal", { value: kcal(meal.calories) })}</span
+                  >
+                </li>`,
+              )}
+            </ul>`
+      }
+    </article>`;
+  }
+
+  private renderWinsLosses() {
+    const result = this.outcomes;
+    return html`<section class="cupcake-card cupcake-wins" aria-labelledby="cupcake-wins-title">
+      <header class="cupcake-wins__header">
+        <h3 id="cupcake-wins-title" class="cupcake-card__label">
+          ${icons.star} ${t("cupcake.today.winsLosses")}
+        </h3>
+        ${renderSettingsSegmented<OutcomeWindow>({
+          mode: "buttons",
+          value: this.outcomeWindow,
+          ariaLabel: t("cupcake.today.winsWindow"),
+          options: OUTCOME_WINDOWS.map((value) => ({
+            value,
+            label: t("cupcake.today.winsDays", { value }),
+          })),
+          onChange: (next) => this.setOutcomeWindow(next),
+        })}
+      </header>
+      ${
+        !result
+          ? html`<p class="cupcake-card__detail">${t("cupcake.today.winsLoading")}</p>`
+          : result.status === "unavailable"
+            ? html`<p class="cupcake-card__detail">
+                ${
+                  result.reason === "offline"
+                    ? t("cupcake.offlineDataHint")
+                    : result.reason === "no-backend"
+                      ? t("cupcake.today.winsNoBackend")
+                      : t("cupcake.today.winsError", { detail: result.detail ?? "" })
+                }
+              </p>`
+            : this.renderOutcomeBody(result)
+      }
+    </section>`;
+  }
+
+  private renderOutcomeBody(result: Extract<OutcomesResult, { status: "ok" }>) {
+    const { counts, entries } = result;
+    const rate = winRate(counts);
+    return html`<div class="cupcake-wins__scores">
+        <div class="cupcake-wins__score cupcake-wins__score--win">
+          <span class="cupcake-card__value">${counts.wins}</span>
+          <span class="cupcake-card__basis">${t("cupcake.today.wins")}</span>
+        </div>
+        <div class="cupcake-wins__score cupcake-wins__score--loss">
+          <span class="cupcake-card__value">${counts.losses}</span>
+          <span class="cupcake-card__basis">${t("cupcake.today.losses")}</span>
+        </div>
+        <div class="cupcake-wins__score">
+          <span class="cupcake-card__value">${rate === null ? "—" : `${rate}%`}</span>
+          <span class="cupcake-card__basis">${t("cupcake.today.winRate")}</span>
+        </div>
+      </div>
+      ${
+        entries.length === 0
+          ? html`<p class="cupcake-card__detail">${t("cupcake.today.winsEmpty")}</p>`
+          : html`<ul class="cupcake-wins__list">
+              ${entries.slice(0, OUTCOME_LIST_LIMIT).map(
+                (entry) => html`<li>
+                  <button
+                    type="button"
+                    class="cupcake-wins__entry cupcake-wins__entry--${entry.outcome}"
+                    aria-expanded=${String(this.openOutcome === entry.id)}
+                    @click=${() => {
+                      this.openOutcome = this.openOutcome === entry.id ? null : entry.id;
+                    }}
+                  >
+                    <span class="cupcake-wins__badge"
+                      >${t(`cupcake.today.outcome.${entry.outcome}`)}</span
+                    >
+                    <span class="cupcake-wins__title">${entry.title}</span>
+                    <span class="cupcake-wins__date">${entry.date}</span>
+                  </button>
+                  ${
+                    this.openOutcome === entry.id && entry.note
+                      ? html`<p class="cupcake-wins__note">${entry.note}</p>`
+                      : nothing
+                  }
+                </li>`,
+              )}
+            </ul>`
+      }
+      <p class="cupcake-card__basis">
+        ${result.stale ? html`${t("cupcake.today.winsStale")} ` : nothing}${t("cupcake.today.winsBasis")}
+      </p>`;
   }
 
   private setCalendar(view: CalendarView, anchor: number) {
@@ -451,7 +631,7 @@ class NutritionPage extends OpenClawLightDomElement {
           </h2>
           <openclaw-accent-heat-toggle></openclaw-accent-heat-toggle>
         </header>
-        ${this.renderCurve()}
+        ${this.renderCorner()} ${this.renderCurve()}
         <openclaw-exercise-quick-log
           class="cupcake-card cupcake-card--exercise"
           .exercises=${this.todayExercises}
@@ -459,6 +639,9 @@ class NutritionPage extends OpenClawLightDomElement {
         ></openclaw-exercise-quick-log>
         <div class="cupcake-today__grid">
           ${this.renderLastMeal()} ${this.renderCalories(consumed)} ${this.renderSugar()}
+        </div>
+        <div class="cupcake-today__grid cupcake-today__grid--wide">
+          ${this.renderFoodToday()} ${this.renderWinsLosses()}
         </div>
         ${this.renderQuickLog()} ${this.renderTargets()}
       </section>

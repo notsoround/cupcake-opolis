@@ -129,6 +129,23 @@ function fakeUpstreams(overrides: Partial<Record<string, () => Response>> = {}) 
         });
       case "food_settings_get":
         return json({ ok: true, settings: { calorieTarget: null, expenditureEstimate: 2400 } });
+      case "outcome_list":
+        return json({
+          ok: true,
+          entries: [
+            {
+              id: "o1",
+              date: "2026-10-11",
+              title: "Went for a walk",
+              outcome: "win",
+              note: "Walk.",
+            },
+            { id: "o2", date: "2026-10-17", title: "Bought it anyway", outcome: "loss", note: "" },
+            { id: "bad", date: "17/10/2026", outcome: "win" },
+          ],
+          counts: { wins: 1, losses: 1, unscored: 0, total: 2 },
+          nextCursor: null,
+        });
       default:
         return json({ ok: false }, 400);
     }
@@ -231,6 +248,36 @@ describe("cupcake-nutrition service", () => {
     const { fetchImpl } = fakeUpstreams();
     const service = createNutritionService({ settings, fetchImpl, now: () => NOW });
     await expect(service.getTargets()).resolves.toEqual({ calorieTarget: null, tdee: 2400 });
+  });
+});
+
+describe("cupcake-nutrition outcomes", () => {
+  it("reads owner-reported wins and losses for Chicago calendar days, newest first", async () => {
+    const { fetchImpl, calls } = fakeUpstreams();
+    const service = createNutritionService({ settings, fetchImpl, now: () => NOW });
+    const result = await service.listOutcomes({
+      start: Date.parse("2026-10-11T05:00:00Z"),
+      end: Date.parse("2026-10-18T05:00:00Z"),
+    });
+    expect(calls[0]?.body).toMatchObject({
+      action: "outcome_list",
+      start: "2026-10-11",
+      end: "2026-10-17",
+    });
+    expect(result.entries.map((e) => [e.date, e.outcome, e.title])).toEqual([
+      ["2026-10-17", "loss", "Bought it anyway"],
+      ["2026-10-11", "win", "Went for a walk"],
+    ]);
+    expect(result.counts).toEqual({ wins: 1, losses: 1, unscored: 0, total: 2 });
+    expect(result.coverageNote).toMatch(/Owner-reported/);
+  });
+
+  it("fails rather than inventing outcomes when the library is down", async () => {
+    const { fetchImpl } = fakeUpstreams({ outcome_list: () => json({}, 503) });
+    const service = createNutritionService({ settings, fetchImpl, now: () => NOW });
+    await expect(service.listOutcomes({ start: NOW - 86_400_000, end: NOW })).rejects.toThrow(
+      /HTTP 503/,
+    );
   });
 });
 

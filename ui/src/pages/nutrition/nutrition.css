@@ -534,3 +534,151 @@
 .cupcake-card--exercise:not(:defined) {
   min-height: 140px;
 }
+
+/* ---- In your corner + Wins & losses (restored from the hales.ai/cupcake Today) ---- */
+
+.cupcake-corner {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: linear-gradient(
+    135deg,
+    var(--accent-subtle),
+    color-mix(in srgb, var(--card) 92%, transparent)
+  );
+}
+
+.cupcake-corner__eyebrow {
+  color: var(--accent);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.cupcake-corner__title {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.cupcake-corner__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.cupcake-corner__actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  text-decoration: none;
+}
+
+.cupcake-corner__actions svg {
+  width: 16px;
+  height: 16px;
+}
+
+.cupcake-today__grid--wide {
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+}
+
+.cupcake-wins__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.cupcake-wins__scores {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.cupcake-wins__score {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+}
+
+.cupcake-wins__score--win .cupcake-card__value {
+  color: var(--ok);
+}
+
+.cupcake-wins__score--loss .cupcake-card__value {
+  color: var(--accent);
+}
+
+.cupcake-wins__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cupcake-wins__entry {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--control-ui-text-sm);
+  text-align: start;
+  cursor: pointer;
+}
+
+.cupcake-wins__entry:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.cupcake-wins__badge {
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+}
+
+.cupcake-wins__entry--win .cupcake-wins__badge {
+  background: color-mix(in srgb, var(--ok) 18%, transparent);
+  color: var(--ok);
+}
+
+.cupcake-wins__entry--loss .cupcake-wins__badge {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.cupcake-wins__title {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cupcake-wins__date {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.cupcake-wins__note {
+  margin: var(--space-1) 0 var(--space-2);
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--accent);
+  color: var(--text);
+  font-size: var(--control-ui-text-sm);
+}

@@ -131,7 +131,27 @@ describe("Today screen", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     const now = new Date(2026, 9, 15, 12, 0).getTime();
     vi.setSystemTime(now);
-    setNutritionAdapterForTesting(fakeAdapter("live", now));
+    const live = fakeAdapter("live", now);
+    const baseMeals = live.listMeals;
+    live.listMeals = async (range) => [
+      ...(await baseMeals(range)),
+      {
+        id: "p",
+        name: "Pupusas",
+        calories: 330,
+        eatenAt: now - 2 * 3_600_000,
+        source: "photo-log",
+      },
+      {
+        id: "e",
+        name: "Cookie",
+        calories: 270,
+        eatenAt: now - 1 * 3_600_000,
+        source: "bank-estimate",
+        note: "ESTIMATE from bank charge $6.10",
+      },
+    ];
+    setNutritionAdapterForTesting(live);
     const element = await mount();
     const corner = element.querySelector(".cupcake-corner")?.textContent ?? "";
     for (const label of ["Record a note", "Quick tip", "Food photo", "Wins & losses"]) {
@@ -139,6 +159,10 @@ describe("Today screen", () => {
     }
     expect(element.textContent).toContain("Food today");
     expect(element.textContent).toContain("Oatmeal");
+    const tags = [...element.querySelectorAll(".cupcake-meal-list__source")];
+    expect(tags.map((tag) => tag.textContent?.trim())).toEqual(["Bank estimate", "Photo"]);
+    expect(tags[0]?.getAttribute("title")).toBe("ESTIMATE from bank charge $6.10");
+    expect(tags[1]?.hasAttribute("title")).toBe(false);
     // No Gateway in tests: the card says it is offline rather than showing scores.
     const wins = element.querySelector(".cupcake-wins");
     expect(wins?.textContent).toContain("Wins & losses");

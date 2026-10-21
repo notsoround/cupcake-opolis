@@ -31,7 +31,10 @@ export type WireMeal = {
   fatGrams?: number;
   /** Some item in the meal had no resolved nutrition; calories are a floor. */
   partial: boolean;
-  source: "photo-log";
+  /** "photo-log" for saved food photos (and older records with no stored source). */
+  source: "photo-log" | "bank-estimate";
+  /** Estimate note stored with a non-photo meal (e.g. which bank charge it came from). */
+  note?: string;
 };
 
 export type WireReceipt = {
@@ -148,8 +151,12 @@ export function parseLibraryMeal(value: unknown): WireMeal | undefined {
     calories: Math.max(0, Math.round(finiteNumber(total.calories) ?? 0)),
     eatenAt,
     partial: value.totalIsPartial === true || finiteNumber(total.calories) === undefined,
-    source: "photo-log",
+    source: value.source === "bank-estimate" ? "bank-estimate" : "photo-log",
   };
+  const note = meal.source === "bank-estimate" ? str(value.note, 600) : undefined;
+  if (note) {
+    meal.note = note;
+  }
   const sugar = optional("sugar_g");
   const protein = optional("protein_g");
   const carbs = optional("carbs_g");

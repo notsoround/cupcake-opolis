@@ -45,6 +45,20 @@ const kcal = (value: number) => Math.round(value).toLocaleString();
 const timeOfDay = (time: number) =>
   new Date(time).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
+/** Small "Photo" / "Bank estimate" tag for meals from the saved food log; the note shows on hover. */
+const renderMealSource = (meal: MealEntry) =>
+  meal.source === "photo-log" || meal.source === "bank-estimate"
+    ? html`<span
+        class="cupcake-meal-list__source cupcake-meal-list__source--${meal.source}"
+        title=${meal.note ?? nothing}
+        >${
+          meal.source === "bank-estimate"
+            ? t("cupcake.today.mealSourceBankEstimate")
+            : t("cupcake.today.mealSourcePhoto")
+        }</span
+      >`
+    : nothing;
+
 class NutritionPage extends OpenClawLightDomElement {
   @consume({ context: applicationContext, subscribe: true })
   private context?: ApplicationContext;
@@ -218,7 +232,7 @@ class NutritionPage extends OpenClawLightDomElement {
               ${meals.map(
                 (meal) => html`<li class="cupcake-meal-list__item">
                   <span class="cupcake-meal-list__time">${timeOfDay(meal.eatenAt)}</span>
-                  <span class="cupcake-meal-list__name">${meal.name}</span>
+                  <span class="cupcake-meal-list__name">${renderMealSource(meal)}${meal.name}</span>
                   <span class="cupcake-meal-list__kcal"
                     >${t("cupcake.today.kcal", { value: kcal(meal.calories) })}</span
                   >
@@ -604,7 +618,7 @@ class NutritionPage extends OpenClawLightDomElement {
       ${this.calendarMeals.map(
         (meal) => html`<li class="cupcake-meal-list__item">
           <span class="cupcake-meal-list__time">${timeOfDay(meal.eatenAt)}</span>
-          <span class="cupcake-meal-list__name">${meal.name}</span>
+          <span class="cupcake-meal-list__name">${renderMealSource(meal)}${meal.name}</span>
           <span class="cupcake-meal-list__kcal"
             >${t("cupcake.today.kcal", { value: kcal(meal.calories) })}</span
           >

@@ -42,7 +42,12 @@ function toMeal(value: unknown): MealEntry | null {
     eatenAt: value.eatenAt,
     ...(finite(value.sugarGrams) ? { sugarGrams: value.sugarGrams } : {}),
     ...(value.partial === true ? { partial: true } : {}),
-    source: "photo-log",
+    ...(value.source === "bank-estimate"
+      ? {
+          source: "bank-estimate" as const,
+          ...(typeof value.note === "string" && value.note ? { note: value.note } : {}),
+        }
+      : { source: "photo-log" as const }),
   };
 }
 

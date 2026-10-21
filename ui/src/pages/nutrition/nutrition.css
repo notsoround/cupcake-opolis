@@ -450,6 +450,19 @@
   white-space: nowrap;
 }
 
+.cupcake-meal-list__source {
+  margin-right: var(--space-2);
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 4px);
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.cupcake-meal-list__source--bank-estimate {
+  border-style: dashed;
+}
+
 .cupcake-meal-list__kcal {
   color: var(--text);
   font-variant-numeric: tabular-nums;

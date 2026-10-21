@@ -27,7 +27,9 @@ export type MealEntry = {
   sugarGrams?: number;
   /** Some item had no resolved nutrition, so `calories` is a floor. */
   partial?: boolean;
-  source: "sample" | "quick-log" | "receipt" | "chat" | "photo-log";
+  source: "sample" | "quick-log" | "receipt" | "chat" | "photo-log" | "bank-estimate";
+  /** Estimate note for a non-photo meal (e.g. the bank charge it was reconstructed from). */
+  note?: string;
 };
 
 export type QuickLogInput = { name: string; calories: number; eatenAt?: number };

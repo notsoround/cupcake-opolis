@@ -44,6 +44,14 @@ describe("live nutrition adapter", () => {
       "nutrition.meals.list": {
         meals: [
           { id: "photo-1", name: "Bulk candy", calories: 1560, eatenAt: candyAt, sugarGrams: 200 },
+          {
+            id: "photo-2",
+            name: "Cookie",
+            calories: 270,
+            eatenAt: candyAt + 60_000,
+            source: "bank-estimate",
+            note: "ESTIMATE from bank charge $6.10",
+          },
           { id: "broken", name: "No time", calories: 10 },
         ],
       },
@@ -53,7 +61,10 @@ describe("live nutrition adapter", () => {
     expect(meals.map((m) => [m.name, m.source])).toEqual([
       ["Apple", "quick-log"],
       ["Bulk candy", "photo-log"],
+      ["Cookie", "bank-estimate"],
     ]);
+    expect(meals.find((m) => m.name === "Cookie")?.note).toBe("ESTIMATE from bank charge $6.10");
+    expect(meals.find((m) => m.name === "Bulk candy")).not.toHaveProperty("note");
     expect(adapter.kind).toBe("live");
     expect(adapter.problem).toBeNull();
   });

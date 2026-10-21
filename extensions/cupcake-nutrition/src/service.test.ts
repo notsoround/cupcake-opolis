@@ -288,6 +288,25 @@ describe("parsers and params", () => {
     expect(() => parseRange({ start: "1", end: 2 })).toThrow(InvalidParamsError);
   });
 
+  it("keeps photo-log as the default source and passes bank-estimate with its note", () => {
+    const base = { id: "x", consumedAt: "2026-10-17T10:00:00Z", total: { calories: 10 } };
+    expect(parseLibraryMeal(base)).toMatchObject({ source: "photo-log" });
+    expect(parseLibraryMeal(base)).not.toHaveProperty("note");
+    expect(parseLibraryMeal({ ...base, source: "photo-log", note: "ignored" })).not.toHaveProperty(
+      "note",
+    );
+    expect(parseLibraryMeal({ ...base, source: "something-else" })).toMatchObject({
+      source: "photo-log",
+    });
+    expect(
+      parseLibraryMeal({
+        ...base,
+        source: "bank-estimate",
+        note: "ESTIMATE from bank charge $6.10",
+      }),
+    ).toMatchObject({ source: "bank-estimate", note: "ESTIMATE from bank charge $6.10" });
+  });
+
   it("marks meals without resolved calories as partial", () => {
     expect(
       parseLibraryMeal({ id: "x", consumedAt: "2026-10-17T10:00:00Z", total: {} }),

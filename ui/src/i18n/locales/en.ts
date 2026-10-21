@@ -4636,6 +4636,8 @@ export const en: TranslationMap & {
       next: "Next",
       jumpToToday: "Today",
       calendarEmpty: "No meals in this range",
+      mealSourcePhoto: "Photo",
+      mealSourceBankEstimate: "Bank estimate",
       kcal: "{value} kcal",
       kcalPerDay: "{value} kcal/day",
       cornerEyebrow: "In your corner",

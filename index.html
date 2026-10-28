@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0b6b3a">
+<title>Klondike Solitaire</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden}
+body{background:radial-gradient(ellipse at 50% 40%,#17904f 0%,#0d6e3b 55%,#064a27 100%);font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#fff;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+#app{display:flex;flex-direction:column;height:100vh;height:100dvh;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+header{background:rgba(0,0,0,.22);box-shadow:0 1px 6px rgba(0,0,0,.25);padding:6px 10px 4px;flex:none}
+.bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.title{font-weight:700;font-size:18px;letter-spacing:.5px;margin-right:auto;white-space:nowrap}
+.title span{color:#ffd54a}
+.btns{display:flex;gap:6px;flex-wrap:wrap}
+button{font:inherit;font-size:14px;font-weight:600;color:#fff;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);border-radius:9px;min-height:40px;min-width:44px;padding:0 12px;cursor:pointer;touch-action:manipulation}
+button:hover:not(:disabled){background:rgba(255,255,255,.24)}
+button:active:not(:disabled){transform:translateY(1px)}
+button:disabled{opacity:.4;cursor:default}
+button.primary{background:#ffd54a;color:#173d22;border-color:#ffd54a}
+.status{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;opacity:.92;padding-top:4px}
+.status b{font-variant-numeric:tabular-nums}
+#board{position:relative;flex:1;overflow:hidden;touch-action:none}
+.slot{position:absolute;left:0;top:0;width:var(--cw);height:var(--ch);border:2px dashed rgba(255,255,255,.28);border-radius:calc(var(--cw)*.08);display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.28);font-size:calc(var(--cw)*.45);pointer-events:none}
+.slot.stock{pointer-events:auto;cursor:pointer;border-style:solid}
+.card{position:absolute;left:0;top:0;width:var(--cw);height:var(--ch);border-radius:calc(var(--cw)*.08);background:linear-gradient(160deg,#fff 0%,#f4f4f0 100%);box-shadow:0 1px 3px rgba(0,0,0,.4);transition:transform .2s ease,box-shadow .15s;will-change:transform;cursor:pointer;color:#1b1b1b;border:1px solid rgba(0,0,0,.18)}
+.card.red{color:#d0192b}
+.card .tl,.card .br{position:absolute;font-size:calc(var(--cw)*.24);line-height:.95;font-weight:700;text-align:center;min-width:calc(var(--cw)*.22)}
+.card .tl{top:4%;left:5%}
+.card .br{bottom:4%;right:5%;transform:rotate(180deg)}
+.card .pip{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:calc(var(--cw)*.52);pointer-events:none}
+.card .face{font-weight:800;font-size:calc(var(--cw)*.42);font-family:Georgia,"Times New Roman",serif}
+.card .face small{font-size:.6em}
+.card.down{background:repeating-linear-gradient(45deg,#1e4f9e 0 5px,#2b63c0 5px 10px);border:calc(var(--cw)*.05) solid #f5f5f5}
+.card.down>*{display:none}
+.card.dragging{box-shadow:0 12px 26px rgba(0,0,0,.5);transition:none!important}
+.card.sel{box-shadow:0 0 0 3px #ffd54a,0 4px 12px rgba(0,0,0,.5)}
+.card.target,.slot.target{box-shadow:0 0 0 3px #7dffa3,0 0 14px rgba(125,255,163,.6)}
+.slot.target{border-color:#7dffa3}
+.card.movable{box-shadow:0 0 0 2px rgba(110,215,255,.95),0 0 10px rgba(110,215,255,.5)}
+.card.hint,.slot.hint{animation:pulse .45s ease-in-out 4 alternate;box-shadow:0 0 0 4px #ff9f1a,0 0 18px #ff9f1a}
+.card.nope{box-shadow:0 0 0 3px #ff4d4d}
+@keyframes pulse{from{filter:brightness(1)}to{filter:brightness(1.25)}}
+.panel{position:fixed;right:10px;top:56px;width:min(340px,calc(100vw - 20px));max-height:calc(100dvh - 70px);overflow:auto;background:#123d26;border:1px solid rgba(255,255,255,.2);border-radius:14px;padding:14px;box-shadow:0 10px 30px rgba(0,0,0,.5);z-index:3000;font-size:15px}
+.panel h3{margin:4px 0 8px;font-size:15px;color:#ffd54a}
+.panel label{display:flex;align-items:center;gap:10px;min-height:40px;cursor:pointer}
+.panel input[type=checkbox]{width:22px;height:22px;accent-color:#ffd54a}
+.panel .row{display:flex;gap:8px;margin:8px 0}
+.panel input[type=number]{flex:1;min-width:0;font:inherit;padding:8px;border-radius:9px;border:1px solid rgba(255,255,255,.3);background:rgba(0,0,0,.25);color:#fff;min-height:40px}
+.panel table{width:100%;border-collapse:collapse;font-size:14px}
+.panel td{padding:3px 0}.panel td:last-child{text-align:right;font-weight:700}
+.panel .keys{font-size:12px;opacity:.75;margin:6px 0 0}
+.hidden{display:none!important}
+#toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%);background:rgba(0,0,0,.78);padding:10px 16px;border-radius:10px;font-size:14px;z-index:4000;opacity:0;transition:opacity .25s;pointer-events:none;max-width:90vw;text-align:center}
+#toast.show{opacity:1}
+#win{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:3500;background:rgba(0,0,0,.25)}
+.winbox{background:#123d26;border:2px solid #ffd54a;border-radius:16px;padding:22px 28px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.6);animation:pop .4s ease-out}
+.winbox h2{margin:0 0 8px;color:#ffd54a;font-size:28px}
+.winbox p{margin:0 0 14px;line-height:1.5}
+@keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+#confetti{position:fixed;inset:0;pointer-events:none;z-index:3400}
+@media (max-width:520px){.title{font-size:16px}button{padding:0 9px;font-size:13px}.status{gap:10px;font-size:12px}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="bar">
+      <div class="title">&#9824;<span>&#9829;</span> Klondike</div>
+      <div class="btns">
+        <button id="bNew" title="New game (N)">New</button>
+        <button id="bUndo" title="Undo (Z)">Undo</button>
+        <button id="bHint" title="Hint (H)">Hint</button>
+        <button id="bSolve" title="Search for a solution from here">Solve</button>
+        <button id="bFinish" title="Auto-finish" disabled>Finish</button>
+        <button id="bOpt" title="Options &amp; stats" aria-label="Options">&#9881;</button>
+      </div>
+    </div>
+    <div class="status">
+      <span>Deal #<b id="sDeal">-</b></span><span id="sMode">Draw 3</span>
+      <span>Score <b id="sScore">0</b></span><span>Moves <b id="sMoves">0</b></span><span>Time <b id="sTime">0:00</b></span>
+    </div>
+  </header>
+  <div id="board"></div>
+</div>
+<div id="opts" class="panel hidden">
+  <h3>Options</h3>
+  <label><input type="checkbox" id="oDraw3"> Draw 3 (off = Draw 1)</label>
+  <label><input type="checkbox" id="oShow"> Practice: show legal moves</label>
+  <label><input type="checkbox" id="oOneTap"> One-tap auto-move</label>
+  <div class="row"><input id="oDeal" type="number" inputmode="numeric" min="1" placeholder="Deal number"><button id="oDealGo">Play deal</button></div>
+  <h3>Statistics</h3>
+  <div id="statsBox"></div>
+  <div class="row"><button id="oReset">Reset stats</button><button id="oClose" class="primary">Close</button></div>
+  <p class="keys">Tap a card, then tap where it goes &middot; double-tap to auto-move &middot; drag works too.<br>Keys: N new &middot; H hint &middot; Z undo &middot; D / Space draw</p>
+</div>
+<div id="toast"></div>
+<div id="win" class="hidden"><div class="winbox"><h2>You won!</h2><p id="winText"></p><button id="winNew" class="primary">New Game</button></div></div>
+<canvas id="confetti"></canvas>
+
+<script id="core">
+/* ===== Core game logic (DOM-free; also loaded into the solver Web Worker) ===== */
+var Core = (function () {
+  'use strict';
+  var SUIT_CH = ['\u2660', '\u2665', '\u2666', '\u2663'];
+  var RANK_CH = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+  function suit(c) { return (c / 13) | 0; }
+  function rank(c) { return c % 13 + 1; }
+  function isRed(c) { var s = (c / 13) | 0; return s === 1 || s === 2; }
+  function name(c) { return RANK_CH[rank(c) - 1] + SUIT_CH[suit(c)]; }
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function shuffledDeck(seed) {
+    var d = [], i;
+    for (i = 0; i < 52; i++) d.push(i);
+    var r = mulberry32(seed >>> 0);
+    for (i = 51; i > 0; i--) { var j = Math.floor(r() * (i + 1)); var t = d[i]; d[i] = d[j]; d[j] = t; }
+    return d;
+  }
+  /* State: tab[7] arrays of card ids (bottom..top); down[i] = number of face-down cards at bottom of column i;
+     stock (top = last), waste (top = last), found[suit] = count on foundation of that suit. */
+  function deal(seed, draw) {
+    var d = shuffledDeck(seed), tab = [[], [], [], [], [], [], []], p = 0;
+    for (var row = 0; row < 7; row++) for (var col = row; col < 7; col++) tab[col].push(d[p++]);
+    return { tab: tab, down: [0, 1, 2, 3, 4, 5, 6], stock: d.slice(28), waste: [], found: [0, 0, 0, 0], draw: draw === 1 ? 1 : 3 };
+  }
+  function clone(s) {
+    return { tab: s.tab.map(function (c) { return c.slice(); }), down: s.down.slice(), stock: s.stock.slice(),
+      waste: s.waste.slice(), found: s.found.slice(), draw: s.draw };
+  }
+  function mv(fp, fi, tp, ti, n) { return { k: 'mv', f: { p: fp, i: fi }, t: { p: tp, i: ti }, n: n }; }
+  var DRAW = { k: 'draw' };
+  function canFoundCard(s, c) { return s.found[suit(c)] === rank(c) - 1; }
+  function stacks(c, onto) { return rank(onto) === rank(c) + 1 && isRed(onto) !== isRed(c); }
+  function srcCards(s, f, n) {
+    if (f.p === 't') { var c = s.tab[f.i]; return c.slice(c.length - n); }
+    if (f.p === 'w') return [s.waste[s.waste.length - 1]];
+    if (f.p === 'f') return [f.i * 13 + s.found[f.i] - 1];
+    return [];
+  }
+  function canDrop(s, cards, t) {
+    var c = cards[0];
+    if (t.p === 'f') return cards.length === 1 && suit(c) === t.i && s.found[t.i] === rank(c) - 1;
+    if (t.p === 't') {
+      var col = s.tab[t.i];
+      if (!col) return false;
+      if (!col.length) return rank(c) === 13;
+      return stacks(c, col[col.length - 1]);
+    }
+    return false;
+  }
+  function isLegal(s, m) {
+    if (!m) return false;
+    if (m.k === 'draw') return s.stock.length > 0 || s.waste.length > 0;
+    var f = m.f, t = m.t, n = m.n | 0;
+    if (!f || !t || n < 1) return false;
+    if (f.p === 't') {
+      if (!(f.i >= 0 && f.i < 7)) return false;
+      var col = s.tab[f.i];
+      if (n > col.length - s.down[f.i]) return false;
+      for (var j = col.length - n; j < col.length - 1; j++) if (!stacks(col[j + 1], col[j])) return false;
+    } else if (f.p === 'w') {
+      if (n !== 1 || !s.waste.length) return false;
+    } else if (f.p === 'f') {
+      if (n !== 1 || !(s.found[f.i] > 0)) return false;
+      if (t.p === 'f') return false;
+    } else return false;
+    if (t.p === f.p && t.i === f.i) return false;
+    if (t.p !== 't' && t.p !== 'f') return false;
+    if (t.p === 't' && !(t.i >= 0 && t.i < 7)) return false;
+    if (t.p === 'f' && !(t.i >= 0 && t.i < 4)) return false;
+    return canDrop(s, srcCards(s, f, n), t);
+  }
+  /* Mutates s. Caller should check isLegal first. Returns info for scoring. */
+  function apply(s, m) {
+    var info = { flip: false, recycle: false, drew: 0 };
+    if (m.k === 'draw') {
+      if (s.stock.length) {
+        var k = Math.min(s.draw, s.stock.length);
+        for (var i = 0; i < k; i++) s.waste.push(s.stock.pop());
+        info.drew = k;
+      } else if (s.waste.length) { s.stock = s.waste.reverse(); s.waste = []; info.recycle = true; }
+      return info;
+    }
+    var cards = srcCards(s, m.f, m.n);
+    if (m.f.p === 't') {
+      var col = s.tab[m.f.i];
+      col.length -= m.n;
+      if (!col.length) s.down[m.f.i] = 0;
+      else if (s.down[m.f.i] >= col.length) { s.down[m.f.i] = col.length - 1; info.flip = true; }
+    } else if (m.f.p === 'w') s.waste.pop();
+    else s.found[m.f.i]--;
+    if (m.t.p === 'f') s.found[m.t.i]++;
+    else { var d = s.tab[m.t.i]; for (var q = 0; q < cards.length; q++) d.push(cards[q]); }
+    return info;
+  }
+  /* All legal moves. prune=true drops pointless/symmetric moves (used by solver & hints). */
+  function legalMoves(s, prune) {
+    var ms = [], i, j, k, c, col, d, top;
+    if (s.waste.length) { c = s.waste[s.waste.length - 1]; if (canFoundCard(s, c)) ms.push(mv('w', 0, 'f', suit(c), 1)); }
+    for (i = 0; i < 7; i++) { col = s.tab[i]; if (col.length) { c = col[col.length - 1]; if (canFoundCard(s, c)) ms.push(mv('t', i, 'f', suit(c), 1)); } }
+    var firstEmpty = -1;
+    for (k = 0; k < 7; k++) if (!s.tab[k].length) { firstEmpty = k; break; }
+    for (i = 0; i < 7; i++) {
+      col = s.tab[i]; var L = col.length;
+      for (j = s.down[i]; j < L; j++) {
+        c = col[j];
+        if (prune) {
+          var useful = j === s.down[i] ? (j > 0 || rank(c) !== 13) : canFoundCard(s, col[j - 1]);
+          if (!useful) continue;
+        }
+        for (k = 0; k < 7; k++) {
+          if (k === i) continue;
+          d = s.tab[k];
+          if (!d.length) {
+            if (rank(c) !== 13 || j === 0) continue;
+            if (prune && k !== firstEmpty) continue;
+            ms.push(mv('t', i, 't', k, L - j));
+          } else if (stacks(c, d[d.length - 1])) ms.push(mv('t', i, 't', k, L - j));
+        }
+      }
+    }
+    if (s.waste.length) {
+      c = s.waste[s.waste.length - 1];
+      for (k = 0; k < 7; k++) {
+        d = s.tab[k];
+        if (!d.length) { if (rank(c) === 13 && (!prune || k === firstEmpty)) ms.push(mv('w', 0, 't', k, 1)); }
+        else if (stacks(c, d[d.length - 1])) ms.push(mv('w', 0, 't', k, 1));
+      }
+    }
+    if (!prune) {
+      for (var su = 0; su < 4; su++) if (s.found[su] > 0) {
+        c = su * 13 + s.found[su] - 1;
+        for (k = 0; k < 7; k++) {
+          d = s.tab[k];
+          if (!d.length) { if (rank(c) === 13) ms.push(mv('f', su, 't', k, 1)); }
+          else if (stacks(c, d[d.length - 1])) ms.push(mv('f', su, 't', k, 1));
+        }
+      }
+    }
+    if (s.stock.length || s.waste.length) ms.push({ k: 'draw' });
+    return ms;
+  }
+  function priority(s, m) {
+    if (m.k === 'draw') return 10;
+    var f = m.f, t = m.t, col, j;
+    if (t.p === 'f') {
+      if (f.p === 't') { col = s.tab[f.i]; return 1000 + ((col.length - 1 === s.down[f.i] && s.down[f.i] > 0) ? 50 : 0); }
+      return 900;
+    }
+    if (f.p === 't') {
+      col = s.tab[f.i]; j = col.length - m.n;
+      if (j === s.down[f.i] && j > 0) return 800 + s.down[f.i] * 5 + (s.tab[t.i].length === 0 ? -3 : 0);
+      if (j > s.down[f.i]) return 700;
+      return 300; // empties a column
+    }
+    if (f.p === 'w') return 650 - (s.tab[t.i].length === 0 ? 20 : 0);
+    return 0;
+  }
+  function orderedMoves(s) {
+    var ms = legalMoves(s, true);
+    var sc = ms.map(function (m, idx) { return { m: m, p: priority(s, m), idx: idx }; });
+    sc.sort(function (a, b) { return b.p - a.p || a.idx - b.idx; });
+    return sc.map(function (x) { return x.m; });
+  }
+  function isSafeFound(s, c) {
+    var r = rank(c);
+    if (s.found[suit(c)] !== r - 1) return false;
+    if (r <= 2) return true;
+    var a, b;
+    if (isRed(c)) { a = s.found[0]; b = s.found[3]; } else { a = s.found[1]; b = s.found[2]; }
+    return a >= r - 1 && b >= r - 1;
+  }
+  function safeAuto(s, path) {
+    var moved = true;
+    while (moved) {
+      moved = false;
+      if (s.waste.length) {
+        var w = s.waste[s.waste.length - 1];
+        if (isSafeFound(s, w)) { var m = mv('w', 0, 'f', suit(w), 1); apply(s, m); path.push(m); moved = true; continue; }
+      }
+      for (var i = 0; i < 7; i++) {
+        var col = s.tab[i];
+        if (col.length && isSafeFound(s, col[col.length - 1])) {
+          var c = col[col.length - 1], m2 = mv('t', i, 'f', suit(c), 1);
+          apply(s, m2); path.push(m2); moved = true; break;
+        }
+      }
+    }
+  }
+  function isWon(s) { return s.found[0] + s.found[1] + s.found[2] + s.found[3] === 52; }
+  function canAutoFinish(s) {
+    if (isWon(s) || s.stock.length || s.waste.length) return false;
+    for (var i = 0; i < 7; i++) if (s.down[i] > 0) return false;
+    return true;
+  }
+  function finishMoves(s0) {
+    var s = clone(s0), out = [];
+    while (!isWon(s)) {
+      var best = -1, br = 99;
+      for (var i = 0; i < 7; i++) {
+        var col = s.tab[i];
+        if (col.length) { var c = col[col.length - 1]; if (canFoundCard(s, c) && rank(c) < br) { br = rank(c); best = i; } }
+      }
+      if (best < 0) break;
+      var cc = s.tab[best][s.tab[best].length - 1], m = mv('t', best, 'f', suit(cc), 1);
+      apply(s, m); out.push(m);
+    }
+    return out;
+  }
+  function hash(s) {
+    var cols = [];
+    for (var i = 0; i < 7; i++) cols.push(s.down[i] + '.' + s.tab[i].join(','));
+    cols.sort();
+    return cols.join('|') + '#' + s.stock.join(',') + '#' + s.waste.join(',');
+  }
+  /* Best destination for a given source (used by double-tap / one-tap). Foundation first, then tableau. */
+  function bestMove(s, f, n) {
+    var m;
+    if (n === 1 && f.p !== 'f') {
+      var c = srcCards(s, f, 1)[0];
+      m = mv(f.p, f.i, 'f', suit(c), 1);
+      if (isLegal(s, m)) return m;
+    }
+    var empties = [], start = f.p === 't' ? f.i + 1 : 0;
+    for (var q = 0; q < 7; q++) {
+      var k = (start + q) % 7;
+      m = mv(f.p, f.i, 't', k, n);
+      if (!isLegal(s, m)) continue;
+      if (s.tab[k].length) return m;
+      empties.push(m);
+    }
+    if (empties.length && !(f.p === 't' && s.tab[f.i].length === n)) return empties[0];
+    return null;
+  }
+  function hint(s) {
+    var ms = orderedMoves(s);
+    return ms.length ? ms[0] : null;
+  }
+  /* Depth-first search with state hashing and a node budget. Run in chunks via step(). */
+  function Solver(start, limit) {
+    this.limit = limit || 250000;
+    this.nodes = 0;
+    this.seen = new Set();
+    var s = clone(start), path = [];
+    safeAuto(s, path);
+    this.stack = [{ s: s, ms: null, idx: 0, path: path }];
+    this.seen.add(hash(s));
+    this.result = null;
+  }
+  Solver.prototype.step = function (budget) {
+    if (this.result) return this.result;
+    var st = this.stack;
+    while (budget-- > 0) {
+      if (!st.length) return (this.result = { done: true, ok: false, nodes: this.nodes });
+      if (this.nodes >= this.limit) return (this.result = { done: true, ok: false, limit: true, nodes: this.nodes });
+      var fr = st[st.length - 1];
+      if (fr.ms === null) {
+        if (isWon(fr.s) || canAutoFinish(fr.s)) {
+          var moves = [];
+          for (var i = 0; i < st.length; i++) for (var j = 0; j < st[i].path.length; j++) moves.push(st[i].path[j]);
+          moves = moves.concat(finishMoves(fr.s));
+          this.stack = [];
+          return (this.result = { done: true, ok: true, moves: moves, nodes: this.nodes });
+        }
+        fr.ms = orderedMoves(fr.s);
+      }
+      if (fr.idx >= fr.ms.length) { st.pop(); continue; }
+      var m = fr.ms[fr.idx++], ns = clone(fr.s);
+      apply(ns, m);
+      var p = [m];
+      safeAuto(ns, p);
+      var h = hash(ns);
+      if (this.seen.has(h)) continue;
+      this.seen.add(h);
+      this.nodes++;
+      st.push({ s: ns, ms: null, idx: 0, path: p });
+    }
+    return { done: false, nodes: this.nodes };
+  };
+  function solve(s, limit) {
+    var S = new Solver(s, limit), r;
+    while (!(r = S.step(100000)).done) {}
+    return r;
+  }
+  return { SUIT_CH: SUIT_CH, RANK_CH: RANK_CH, suit: suit, rank: rank, isRed: isRed, name: name, mulberry32: mulberry32,
+    shuffledDeck: shuffledDeck, deal: deal, clone: clone, srcCards: srcCards, canDrop: canDrop, isLegal: isLegal, apply: apply,
+    legalMoves: legalMoves, orderedMoves: orderedMoves, priority: priority, isWon: isWon, canAutoFinish: canAutoFinish,
+    finishMoves: finishMoves, hash: hash, bestMove: bestMove, hint: hint, Solver: Solver, solve: solve, DRAW: DRAW };
+})();
+if (typeof module !== 'undefined' && module.exports) module.exports = Core;
+</script>
+
+<script>
+/* ===== UI ===== */
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var board = $('board');
+  var store = {
+    get: function (k, d) { try { var v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set: function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+  };
+  var settings = Object.assign({ draw: 3, showMoves: false, oneTap: false }, store.get('klondike.settings', {}));
+  var stats = Object.assign({ played: 0, won: 0, bestTime: null, streak: 0, bestStreak: 0 }, store.get('klondike.stats', {}));
+  var G = null, busy = false, sel = null, solver = null, playTimer = null;
+  var cardEls = [], slots = {}, L = {}, pos = [], loc = [];
+  var lastTap = null, pd = null;
+
+  /* ---------- setup DOM ---------- */
+  function makeSlot(key, cls, txt) {
+    var el = document.createElement('div');
+    el.className = 'slot ' + (cls || ''); el.innerHTML = txt || ''; el.dataset.slot = key;
+    board.appendChild(el); slots[key] = el;
+  }
+  makeSlot('s', 'stock', '');
+  makeSlot('w', '', '');
+  for (var f = 0; f < 4; f++) makeSlot('f' + f, '', Core.SUIT_CH[f] + '\uFE0E');
+  for (var t = 0; t < 7; t++) makeSlot('t' + t, '', 'K');
+  for (var c = 0; c < 52; c++) {
+    var el = document.createElement('div');
+    var r = Core.RANK_CH[Core.rank(c) - 1], su = Core.SUIT_CH[Core.suit(c)] + '\uFE0E';
+    el.className = 'card' + (Core.isRed(c) ? ' red' : '');
+    el.dataset.id = c;
+    el.setAttribute('aria-label', Core.name(c));
+    var center = Core.rank(c) > 10 ? '<span class="face">' + r + '<small>' + su + '</small></span>' : su;
+    el.innerHTML = '<div class="tl">' + r + '<br>' + su + '</div><div class="pip">' + center + '</div><div class="br">' + r + '<br>' + su + '</div>';
+    board.appendChild(el); cardEls[c] = el;
+  }
+
+  /* ---------- layout ---------- */
+  function colX(i) { return L.ox + i * (L.cw + L.gap); }
+  function layout() {
+    var W = board.clientWidth, H = board.clientHeight;
+    var gap = Math.max(4, Math.min(16, W * 0.014));
+    var cw = (W - gap * 8) / 7;
+    cw = Math.max(26, Math.min(cw, (H - gap * 3) / (1.4 * 2.7), 140));
+    var ch = cw * 1.4;
+    L = { W: W, H: H, gap: gap, cw: cw, ch: ch, ox: (W - (7 * cw + 6 * gap)) / 2, top: gap, ty: gap * 2.4 + ch };
+    board.style.setProperty('--cw', cw + 'px'); board.style.setProperty('--ch', ch + 'px');
+    place(slots.s, colX(0), L.top); place(slots.w, colX(1), L.top);
+    slots.w.style.visibility = 'hidden';
+    for (var i = 0; i < 4; i++) place(slots['f' + i], colX(3 + i), L.top);
+    for (i = 0; i < 7; i++) place(slots['t' + i], colX(i), L.ty);
+  }
+  function place(el, x, y) { el.style.transform = 'translate(' + x + 'px,' + y + 'px)'; }
+  function pileRect(key) {
+    if (key[0] === 't') { var i = +key.slice(1); return { x: colX(i) - L.gap / 2, y: L.ty - L.gap, w: L.cw + L.gap, h: L.H - L.ty + L.gap }; }
+    if (key[0] === 'f') { var f = +key.slice(1); return { x: colX(3 + f) - L.gap / 2, y: 0, w: L.cw + L.gap, h: L.ch + L.gap * 2 }; }
+    if (key === 's') return { x: colX(0), y: L.top, w: L.cw, h: L.ch };
+    return null;
+  }
+
+  /* ---------- render ---------- */
+  function setPos(c, x, y, z, up, where) { pos[c] = { x: x, y: y, z: z, up: up }; loc[c] = where; }
+  function render() {
+    var s = G.s, i, j;
+    s.stock.forEach(function (c, i) { setPos(c, colX(0), L.top, 1 + i, false, { p: 's', j: i }); });
+    var wl = s.waste.length, fanN = s.draw === 3 ? Math.min(3, wl) : 1, fan = L.cw * 0.26;
+    s.waste.forEach(function (c, i) { var v = i - (wl - fanN); setPos(c, colX(1) + (v > 0 ? v * fan : 0), L.top, 1 + i, true, { p: 'w', j: i }); });
+    for (var su = 0; su < 4; su++) for (j = 0; j < s.found[su]; j++) setPos(su * 13 + j, colX(3 + su), L.top, 1 + j, true, { p: 'f', i: su, j: j });
+    var avail = L.H - L.ty - L.ch - L.gap;
+    for (i = 0; i < 7; i++) {
+      var col = s.tab[i], dn = L.ch * 0.11, up = L.ch * 0.27;
+      var nd = Math.min(s.down[i], col.length), nu = col.length - nd;
+      var need = nd * dn + Math.max(0, nu - 1) * up;
+      if (need > avail && need > 0) { var k = avail / need; dn *= k; up *= k; }
+      var y = L.ty;
+      for (j = 0; j < col.length; j++) {
+        setPos(col[j], colX(i), y, 1 + j, j >= s.down[i], { p: 't', i: i, j: j });
+        y += j < s.down[i] ? dn : up;
+      }
+    }
+    for (var c = 0; c < 52; c++) {
+      var p = pos[c], el = cardEls[c];
+      if (el.classList.contains('dragging')) continue;
+      el.style.transform = 'translate(' + p.x + 'px,' + p.y + 'px)';
+      el.style.zIndex = p.z;
+      el.classList.toggle('down', !p.up);
+    }
+    slots.s.innerHTML = s.stock.length ? '' : (s.waste.length ? '&#8635;' : '');
+    decorate();
+    updateStatus();
+  }
+  function clearClasses(cls) {
+    for (var c = 0; c < 52; c++) cardEls[c].classList.remove(cls);
+    for (var k in slots) slots[k].classList.remove(cls);
+  }
+  function pileTopEl(t) {
+    var s = G.s;
+    if (t.p === 't') { var col = s.tab[t.i]; return col.length ? cardEls[col[col.length - 1]] : slots['t' + t.i]; }
+    if (t.p === 'f') return s.found[t.i] ? cardEls[t.i * 13 + s.found[t.i] - 1] : slots['f' + t.i];
+    if (t.p === 's') return G.s.stock.length ? cardEls[G.s.stock[G.s.stock.length - 1]] : slots.s;
+    return null;
+  }
+  function decorate() {
+    clearClasses('sel'); clearClasses('target'); clearClasses('movable');
+    var s = G.s;
+    if (sel) {
+      sel.ids.forEach(function (c) { cardEls[c].classList.add('sel'); });
+      for (var i = 0; i < 7; i++) if (Core.isLegal(s, { k: 'mv', f: sel.f, t: { p: 't', i: i }, n: sel.n })) pileTopEl({ p: 't', i: i }).classList.add('target');
+      for (i = 0; i < 4; i++) if (Core.isLegal(s, { k: 'mv', f: sel.f, t: { p: 'f', i: i }, n: sel.n })) pileTopEl({ p: 'f', i: i }).classList.add('target');
+    } else if (settings.showMoves && !busy) {
+      Core.legalMoves(s, false).forEach(function (m) {
+        if (m.k !== 'mv' || m.f.p === 'f') return;
+        var ids = Core.srcCards(s, m.f, m.n);
+        cardEls[ids[0]].classList.add('movable');
+      });
+    }
+    $('bFinish').disabled = busy || !Core.canAutoFinish(s);
+    $('bUndo').disabled = busy || !G.undo.length || G.won;
+  }
+  function fmtTime(t) { var m = Math.floor(t / 60), s = t % 60; return m + ':' + (s < 10 ? '0' : '') + s; }
+  function updateStatus() {
+    $('sDeal').textContent = G.seed; $('sMode').textContent = 'Draw ' + G.s.draw;
+    $('sScore').textContent = G.score; $('sMoves').textContent = G.moves; $('sTime').textContent = fmtTime(G.elapsed);
+  }
+
+  /* ---------- toast ---------- */
+  var toastTimer = null;
+  function toast(msg, dur) {
+    var el = $('toast'); el.textContent = msg; el.classList.add('show');
+    clearTimeout(toastTimer);
+    if (dur !== 0) toastTimer = setTimeout(function () { el.classList.remove('show'); }, dur || 2200);
+  }
+
+  /* ---------- game flow ---------- */
+  function saveStats() { store.set('klondike.stats', stats); }
+  function abandon() {
+    if (G && G.started && !G.won) { stats.streak = 0; saveStats(); }
+  }
+  function newGame(seed) {
+    stopAll();
+    abandon();
+    if (!(seed >= 1)) seed = 1 + Math.floor(Math.random() * 999999);
+    seed = Math.floor(seed);
+    G = { s: Core.deal(seed, settings.draw), seed: seed, moves: 0, score: 0, elapsed: 0, started: false, won: false, assisted: false, undo: [] };
+    sel = null; lastTap = null;
+    $('win').classList.add('hidden');
+    // deal animation: from stock position
+    for (var c = 0; c < 52; c++) {
+      var el = cardEls[c]; el.classList.remove('dragging');
+      el.style.transition = 'none'; el.style.transitionDelay = '';
+      el.style.transform = 'translate(' + colX(0) + 'px,' + L.top + 'px)'; el.classList.add('down');
+    }
+    void board.offsetWidth;
+    var order = 0;
+    for (var row = 0; row < 7; row++) for (var col = row; col < 7; col++) { cardEls[G.s.tab[col][row]].style.transitionDelay = (order++ * 22) + 'ms'; }
+    for (c = 0; c < 52; c++) cardEls[c].style.transition = '';
+    render();
+    setTimeout(function () { for (var c = 0; c < 52; c++) cardEls[c].style.transitionDelay = ''; }, 1000);
+  }
+  function snapshot() { return { s: Core.clone(G.s), moves: G.moves, score: G.score }; }
+  function scoreFor(m, info) {
+    var d = 0;
+    if (m.k === 'draw') { if (info.recycle) d -= G.s.draw === 1 ? 100 : 20; return d; }
+    if (m.f.p === 'w' && m.t.p === 't') d += 5;
+    if (m.t.p === 'f' && m.f.p !== 'f') d += 10;
+    if (m.f.p === 'f') d -= 15;
+    if (info.flip) d += 5;
+    return d;
+  }
+  function doMove(m, fromPlayback) {
+    if (!Core.isLegal(G.s, m)) return false;
+    G.undo.push(snapshot());
+    var info = Core.apply(G.s, m);
+    G.moves++;
+    G.score = Math.max(0, G.score + scoreFor(m, info));
+    if (!G.started) { G.started = true; stats.played++; saveStats(); }
+    sel = null;
+    render();
+    if (Core.isWon(G.s)) { onWin(); return true; }
+    if (!fromPlayback && Core.canAutoFinish(G.s)) setTimeout(autoFinish, 250);
+    return true;
+  }
+  function draw() {
+    if (busy || G.won) return;
+    sel = null;
+    if (!doMove({ k: 'draw' })) { render(); toast('Stock is empty'); }
+  }
+  function undo() {
+    if (busy || G.won || !G.undo.length) return;
+    var u = G.undo.pop();
+    G.s = u.s; G.moves = u.moves; G.score = u.score; sel = null;
+    render();
+  }
+  function autoMove(src) {
+    var m = Core.bestMove(G.s, src.f, src.n);
+    if (m) { doMove(m); return true; }
+    var el = cardEls[src.ids[0]]; el.classList.add('nope');
+    setTimeout(function () { el.classList.remove('nope'); }, 350);
+    return false;
+  }
+  function showHint() {
+    if (busy || G.won) return;
+    sel = null; render();
+    var m = Core.hint(G.s);
+    clearClasses('hint');
+    if (!m) { toast('No moves available — try Undo or New game'); return; }
+    var els = [];
+    if (m.k === 'draw') { els.push(pileTopEl({ p: 's' })); toast(G.s.stock.length ? 'Hint: draw from the stock' : 'Hint: turn the waste over'); }
+    else {
+      Core.srcCards(G.s, m.f, m.n).forEach(function (c) { els.push(cardEls[c]); });
+      els.push(pileTopEl(m.t));
+      toast('Hint: move ' + Core.name(Core.srcCards(G.s, m.f, m.n)[0]) + (m.t.p === 'f' ? ' to the foundation' : ' to column ' + (m.t.i + 1)));
+    }
+    els.forEach(function (e) { void e.offsetWidth; e.classList.add('hint'); });
+    setTimeout(function () { clearClasses('hint'); }, 1900);
+  }
+  function playback(moves, delay, done) {
+    busy = true; sel = null; render();
+    var i = 0;
+    (function step() {
+      if (!busy) return;
+      if (i >= moves.length || G.won) { busy = false; playTimer = null; render(); if (done) done(true); return; }
+      if (!doMove(moves[i++], true)) { busy = false; playTimer = null; render(); toast('Playback stopped (illegal move)'); return; }
+      playTimer = setTimeout(step, delay);
+    })();
+  }
+  function autoFinish() {
+    if (busy || G.won || !Core.canAutoFinish(G.s)) return;
+    playback(Core.finishMoves(G.s), 90);
+  }
+  function stopAll() {
+    if (playTimer) { clearTimeout(playTimer); playTimer = null; }
+    cancelSolve();
+    busy = false;
+  }
+
+  /* ---------- solver ---------- */
+  var SOLVE_LIMIT = 300000;
+  function cancelSolve() {
+    if (!solver) return;
+    if (solver.w) { solver.w.terminate(); URL.revokeObjectURL(solver.url); }
+    solver = null; busy = false;
+    $('bSolve').textContent = 'Solve';
+  }
+  function solve() {
+    if (solver) { cancelSolve(); render(); toast('Solver stopped'); return; }
+    if (busy || G.won) return;
+    sel = null; busy = true; render();
+    $('bSolve').textContent = 'Stop';
+    toast('Searching for a solution…', 0);
+    var state = Core.clone(G.s);
+    var finish = function (r) {
+      solver = null; busy = false; $('bSolve').textContent = 'Solve';
+      if (r.ok) {
+        toast('Solution found: ' + r.moves.length + ' moves (' + r.nodes.toLocaleString() + ' positions searched)', 3500);
+        G.assisted = true;
+        playback(r.moves, 230);
+      } else { render(); toast('No solution found within search limit (' + r.nodes.toLocaleString() + ' positions)', 4000); }
+    };
+    var chunked = function () {
+      var S = new Core.Solver(state, SOLVE_LIMIT), me = { S: S };
+      solver = me;
+      (function go() {
+        if (solver !== me) return;
+        var r = S.step(4000);
+        if (r.done) finish(r);
+        else { toast('Searching… ' + r.nodes.toLocaleString() + ' positions', 0); setTimeout(go, 0); }
+      })();
+    };
+    try {
+      var code = $('core').textContent + '\n;self.onmessage=function(e){var S=new Core.Solver(e.data.state,e.data.limit),r;' +
+        'while(!(r=S.step(20000)).done){self.postMessage({p:r.nodes});}self.postMessage({r:r});};';
+      var url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+      var w = new Worker(url), me = { w: w, url: url };
+      solver = me;
+      w.onmessage = function (e) {
+        if (solver !== me) return;
+        if (e.data.p != null) toast('Searching… ' + e.data.p.toLocaleString() + ' positions', 0);
+        else { w.terminate(); URL.revokeObjectURL(url); finish(e.data.r); }
+      };
+      w.onerror = function (ev) {
+        if (ev && ev.preventDefault) ev.preventDefault();
+        if (solver !== me) return;
+        w.terminate(); URL.revokeObjectURL(url); solver = null; chunked();
+      };
+      w.postMessage({ state: state, limit: SOLVE_LIMIT });
+    } catch (err) { solver = null; chunked(); }
+  }
+
+  /* ---------- win ---------- */
+  function onWin() {
+    G.won = true; busy = false; sel = null;
+    var bonus = G.elapsed >= 30 ? Math.round(700000 / G.elapsed) : 0;
+    G.score += bonus;
+    var counted = !G.assisted;
+    if (counted) {
+      stats.won++; stats.streak++; stats.bestStreak = Math.max(stats.bestStreak, stats.streak);
+      if (stats.bestTime == null || G.elapsed < stats.bestTime) stats.bestTime = G.elapsed;
+    } else stats.streak = 0;
+    saveStats();
+    render();
+    $('winText').innerHTML = 'Deal #' + G.seed + ' &middot; ' + G.moves + ' moves &middot; ' + fmtTime(G.elapsed) +
+      '<br>Score ' + G.score + (bonus ? ' (time bonus +' + bonus + ')' : '') +
+      (counted ? '<br>Win streak: ' + stats.streak + ' &middot; Won ' + stats.won + ' of ' + stats.played
+        : '<br><small>Solved by the computer — not counted as a win.</small>');
+    setTimeout(function () { $('win').classList.remove('hidden'); }, 400);
+    confetti();
+  }
+  function confetti() {
+    var cv = $('confetti'), ctx = cv.getContext('2d');
+    var dpr = window.devicePixelRatio || 1;
+    cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    var cols = ['#ffd54a', '#ff5a5f', '#4ad7ff', '#7dffa3', '#ffffff', '#ff9f1a'], P = [];
+    for (var i = 0; i < 220; i++) P.push({ x: innerWidth / 2 + (Math.random() - .5) * 120, y: innerHeight * .45, vx: (Math.random() - .5) * 16,
+      vy: -Math.random() * 16 - 4, r: Math.random() * Math.PI, vr: (Math.random() - .5) * .4, s: 5 + Math.random() * 6, c: cols[i % cols.length] });
+    var t0 = performance.now();
+    (function frame(t) {
+      var el = t - t0;
+      ctx.clearRect(0, 0, innerWidth, innerHeight);
+      P.forEach(function (p) {
+        p.vy += .35; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.r += p.vr;
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c; ctx.globalAlpha = Math.max(0, 1 - el / 4500);
+        ctx.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); ctx.restore();
+      });
+      if (el < 4500) requestAnimationFrame(frame); else ctx.clearRect(0, 0, innerWidth, innerHeight);
+    })(t0);
+  }
+
+  /* ---------- input ---------- */
+  function sourceFor(c) {
+    var l = loc[c], s = G.s;
+    if (!l) return null;
+    if (l.p === 't') { var col = s.tab[l.i]; if (l.j < s.down[l.i]) return null; return { f: { p: 't', i: l.i }, n: col.length - l.j, ids: col.slice(l.j) }; }
+    if (l.p === 'w') return l.j === s.waste.length - 1 ? { f: { p: 'w', i: 0 }, n: 1, ids: [c] } : null;
+    if (l.p === 'f') return l.j === s.found[l.i] - 1 ? { f: { p: 'f', i: l.i }, n: 1, ids: [c] } : null;
+    return null;
+  }
+  function boardXY(e) { var r = board.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+  function inRect(p, r) { return r && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h; }
+  function pileAt(p) {
+    if (inRect(p, pileRect('s'))) return { p: 's' };
+    for (var i = 0; i < 4; i++) if (inRect(p, pileRect('f' + i))) return { p: 'f', i: i };
+    for (i = 0; i < 7; i++) if (inRect(p, pileRect('t' + i))) return { p: 't', i: i };
+    return null;
+  }
+  function overlap(a, b) {
+    var w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x), h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+    return w > 0 && h > 0 ? w * h : 0;
+  }
+  board.addEventListener('pointerdown', function (e) {
+    if (pd || busy || G.won) return;
+    if (e.button !== undefined && e.button !== 0) return;
+    var el = e.target.closest ? e.target.closest('.card') : null;
+    var p = boardXY(e);
+    pd = { id: e.pointerId, x0: p.x, y0: p.y, card: el ? +el.dataset.id : null, drag: false };
+    if (pd.card != null) pd.src = sourceFor(pd.card);
+    try { board.setPointerCapture(e.pointerId); } catch (err) {}
+    e.preventDefault();
+  });
+  board.addEventListener('pointermove', function (e) {
+    if (!pd || e.pointerId !== pd.id) return;
+    var p = boardXY(e), dx = p.x - pd.x0, dy = p.y - pd.y0;
+    if (!pd.drag) {
+      if (!pd.src || Math.hypot(dx, dy) < 7) return;
+      pd.drag = true; sel = null; decorate();
+      pd.src.ids.forEach(function (c, k) { var el = cardEls[c]; el.classList.add('dragging'); el.style.zIndex = 1000 + k; });
+    }
+    pd.dx = dx; pd.dy = dy;
+    pd.src.ids.forEach(function (c) { cardEls[c].style.transform = 'translate(' + (pos[c].x + dx) + 'px,' + (pos[c].y + dy) + 'px)'; });
+  });
+  function endDrag(e, cancelled) {
+    var d = pd; pd = null;
+    try { board.releasePointerCapture(e.pointerId); } catch (err) {}
+    if (!d) return;
+    if (d.drag) {
+      d.src.ids.forEach(function (c) { cardEls[c].classList.remove('dragging'); });
+      if (!cancelled) {
+        var c0 = d.src.ids[0], r = { x: pos[c0].x + d.dx, y: pos[c0].y + d.dy, w: L.cw, h: L.ch };
+        var pt = boardXY(e), best = null, bestA = 0, keys = ['f0', 'f1', 'f2', 'f3', 't0', 't1', 't2', 't3', 't4', 't5', 't6'];
+        keys.forEach(function (k) {
+          var t = { p: k[0], i: +k.slice(1) }, m = { k: 'mv', f: d.src.f, t: t, n: d.src.n };
+          if (!Core.isLegal(G.s, m)) return;
+          var pr = pileRect(k), a = overlap(r, pr) + (inRect(pt, pr) ? L.cw * L.ch : 0);
+          if (a > bestA) { bestA = a; best = m; }
+        });
+        if (best) { lastTap = null; doMove(best); return; }
+      }
+      render();
+      return;
+    }
+    if (!cancelled) tap(d, boardXY(e));
+  }
+  board.addEventListener('pointerup', function (e) { if (pd && e.pointerId === pd.id) endDrag(e, false); });
+  board.addEventListener('pointercancel', function (e) { if (pd && e.pointerId === pd.id) endDrag(e, true); });
+  board.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  function tap(d, pt) {
+    var now = Date.now(), c = d.card, l = c != null ? loc[c] : null;
+    var pile = l ? { p: l.p, i: l.i } : pileAt(pt);
+    if (pile && pile.p === 's') { lastTap = null; draw(); return; }
+    // double-tap / double-click: auto-move to foundation or tableau
+    if (c != null && lastTap && lastTap.card === c && now - lastTap.t < 400) {
+      lastTap = null; sel = null;
+      var src2 = sourceFor(c);
+      if (src2) autoMove(src2); else render();
+      return;
+    }
+    lastTap = { card: c, t: now };
+    if (sel) {
+      if (pile && (pile.p === 't' || pile.p === 'f') && !(sel.f.p === pile.p && sel.f.i === pile.i)) {
+        var m = { k: 'mv', f: sel.f, t: { p: pile.p, i: pile.i }, n: sel.n };
+        if (Core.isLegal(G.s, m)) { sel = null; lastTap = null; doMove(m); return; }
+      }
+      if (c != null && sel.ids[0] === c) { sel = null; decorate(); return; }
+    }
+    var src = c != null ? sourceFor(c) : null;
+    if (src) {
+      if (settings.oneTap && autoMove(src)) { lastTap = null; return; }
+      sel = src;
+    } else sel = null;
+    decorate();
+  }
+
+  /* ---------- controls ---------- */
+  $('bNew').onclick = function () { newGame(); };
+  $('bUndo').onclick = undo;
+  $('bHint').onclick = showHint;
+  $('bSolve').onclick = solve;
+  $('bFinish').onclick = autoFinish;
+  $('winNew').onclick = function () { newGame(); };
+  var opts = $('opts');
+  function renderStats() {
+    var pct = stats.played ? Math.round(100 * stats.won / stats.played) : 0;
+    $('statsBox').innerHTML = '<table><tr><td>Games played</td><td>' + stats.played + '</td></tr><tr><td>Games won</td><td>' + stats.won +
+      ' (' + pct + '%)</td></tr><tr><td>Best time</td><td>' + (stats.bestTime == null ? '–' : fmtTime(stats.bestTime)) +
+      '</td></tr><tr><td>Current streak</td><td>' + stats.streak + '</td></tr><tr><td>Best streak</td><td>' + stats.bestStreak + '</td></tr></table>';
+  }
+  $('bOpt').onclick = function () {
+    var open = opts.classList.toggle('hidden') === false;
+    if (open) { $('oDraw3').checked = settings.draw === 3; $('oShow').checked = settings.showMoves; $('oOneTap').checked = settings.oneTap; $('oDeal').value = ''; renderStats(); }
+  };
+  $('oClose').onclick = function () { opts.classList.add('hidden'); };
+  function saveSettings() { store.set('klondike.settings', settings); }
+  $('oDraw3').onchange = function () {
+    settings.draw = this.checked ? 3 : 1; saveSettings();
+    newGame(G.seed); toast('Draw ' + settings.draw + ' — deal #' + G.seed + ' restarted');
+  };
+  $('oShow').onchange = function () { settings.showMoves = this.checked; saveSettings(); render(); };
+  $('oOneTap').onchange = function () { settings.oneTap = this.checked; saveSettings(); };
+  function playDeal() {
+    var n = parseInt($('oDeal').value, 10);
+    if (!(n >= 1)) { toast('Enter a deal number (1 or higher)'); return; }
+    opts.classList.add('hidden'); newGame(n); toast('Deal #' + n);
+  }
+  $('oDealGo').onclick = playDeal;
+  $('oDeal').addEventListener('keydown', function (e) { if (e.key === 'Enter') playDeal(); });
+  $('oReset').onclick = function () { stats = { played: 0, won: 0, bestTime: null, streak: 0, bestStreak: 0 }; saveStats(); renderStats(); toast('Statistics reset'); };
+  document.addEventListener('keydown', function (e) {
+    var tg = e.target && e.target.tagName;
+    if (tg === 'INPUT' || tg === 'TEXTAREA') return;
+    var k = e.key.toLowerCase();
+    if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); undo(); return; }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (k === 'n') newGame();
+    else if (k === 'h') showHint();
+    else if (k === 'z' || k === 'u') undo();
+    else if (k === 'd' || k === ' ') { e.preventDefault(); draw(); }
+    else if (k === 'escape') { sel = null; opts.classList.add('hidden'); decorate(); }
+  });
+  var rT = null;
+  window.addEventListener('resize', function () {
+    clearTimeout(rT);
+    rT = setTimeout(function () {
+      layout();
+      for (var c = 0; c < 52; c++) cardEls[c].style.transition = 'none';
+      render(); void board.offsetWidth;
+      for (c = 0; c < 52; c++) cardEls[c].style.transition = '';
+    }, 60);
+  });
+  setInterval(function () {
+    if (!G || !G.started || G.won || document.hidden) return;
+    G.elapsed++;
+    if (G.elapsed % 10 === 0) G.score = Math.max(0, G.score - 2);
+    updateStatus();
+  }, 1000);
+
+  layout();
+  newGame();
+  // test hook (harmless)
+  window.__klondike = { get G() { return G; }, doMove: doMove, undo: undo, newGame: newGame, solve: solve, hint: showHint, render: render, get busy() { return busy; } };
+})();
+</script>
+</body>
+</html>

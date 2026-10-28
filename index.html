@@ -27,7 +27,7 @@ button.primary{background:#ffd54a;color:#173d22;border-color:#ffd54a}
 .slot.stock{pointer-events:auto;cursor:pointer;border-style:solid}
 .card{position:absolute;left:0;top:0;width:var(--cw);height:var(--ch);border-radius:calc(var(--cw)*.08);background:linear-gradient(160deg,#fff 0%,#f4f4f0 100%);box-shadow:0 1px 3px rgba(0,0,0,.4);transition:transform .2s ease,box-shadow .15s;will-change:transform;cursor:pointer;color:#1b1b1b;border:1px solid rgba(0,0,0,.18)}
 .card.red{color:#d0192b}
-.card .tl,.card .br{position:absolute;font-size:calc(var(--cw)*.24);line-height:.95;font-weight:700;text-align:center;min-width:calc(var(--cw)*.22)}
+.card .tl,.card .br{position:absolute;font-size:calc(var(--cw)*.24);line-height:.9;font-weight:700;text-align:center;min-width:calc(var(--cw)*.22)}
 .card .tl{top:4%;left:5%}
 .card .br{bottom:4%;right:5%;transform:rotate(180deg)}
 .card .pip{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:calc(var(--cw)*.52);pointer-events:none}
@@ -469,7 +469,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Core;
     for (var su = 0; su < 4; su++) for (j = 0; j < s.found[su]; j++) setPos(su * 13 + j, colX(3 + su), L.top, 1 + j, true, { p: 'f', i: su, j: j });
     var avail = L.H - L.ty - L.ch - L.gap;
     for (i = 0; i < 7; i++) {
-      var col = s.tab[i], dn = L.ch * 0.11, up = L.ch * 0.27;
+      var col = s.tab[i], dn = L.ch * 0.11, up = L.ch * 0.31;
       var nd = Math.min(s.down[i], col.length), nu = col.length - nd;
       var need = nd * dn + Math.max(0, nu - 1) * up;
       if (need > avail && need > 0) { var k = avail / need; dn *= k; up *= k; }
@@ -674,13 +674,17 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Core;
       var url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
       var w = new Worker(url), me = { w: w, url: url };
       solver = me;
+      // watchdog: if the worker never reports back (blocked environment), fall back to chunked main-thread search
+      var dog = setTimeout(function () { if (solver === me) { w.terminate(); URL.revokeObjectURL(url); solver = null; chunked(); } }, 5000);
       w.onmessage = function (e) {
+        clearTimeout(dog);
         if (solver !== me) return;
         if (e.data.p != null) toast('Searching… ' + e.data.p.toLocaleString() + ' positions', 0);
         else { w.terminate(); URL.revokeObjectURL(url); finish(e.data.r); }
       };
       w.onerror = function (ev) {
         if (ev && ev.preventDefault) ev.preventDefault();
+        clearTimeout(dog);
         if (solver !== me) return;
         w.terminate(); URL.revokeObjectURL(url); solver = null; chunked();
       };

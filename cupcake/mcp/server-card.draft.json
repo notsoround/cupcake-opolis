@@ -1,0 +1,29 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json",
+  "name": "ai.hales/cupcake",
+  "title": "Cupcake",
+  "version": "1.1.0",
+  "description": "Private Cupcake connector: shared status/journal for AI agents and review-only code drafts.",
+  "websiteUrl": "https://hales.ai/cupcake",
+  "repository": {
+    "url": "https://github.com/notsoround/cupcake-opolis",
+    "source": "github",
+    "subfolder": "cupcake"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://connector.hales.ai/mcp",
+      "supportedProtocolVersions": [
+        "2025-11-25"
+      ]
+    }
+  ],
+  "_meta": {
+    "ai.hales/draft": {
+      "status": "draft-not-deployed",
+      "drafted": "2026-11-01",
+      "notes": "Proposal only. Serve at https://connector.hales.ai/server-card after Matt approves. See cupcake/docs/mcp-server-card.md."
+    }
+  }
+}

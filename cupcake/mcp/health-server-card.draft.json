@@ -1,0 +1,24 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json",
+  "name": "ai.hales/cupcake-live",
+  "title": "Cupcake Live",
+  "version": "1.0.0",
+  "description": "Private Cupcake health connector: bounded owner-only health reads and owner-requested logs.",
+  "websiteUrl": "https://hales.ai/cupcake",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://connector.hales.ai/health/mcp",
+      "supportedProtocolVersions": [
+        "2025-11-25"
+      ]
+    }
+  ],
+  "_meta": {
+    "ai.hales/draft": {
+      "status": "draft-not-deployed",
+      "drafted": "2026-11-01",
+      "notes": "Proposal only. Confirm version against the live serverInfo before publishing. See cupcake/docs/mcp-server-card.md."
+    }
+  }
+}

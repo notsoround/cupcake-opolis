@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/notsoround/cupcake-opolis/cupcake/intent/experience/schema.json",
+  "title": "Cupcake experience graph record (cupcake.experience.v1)",
+  "description": "One JSON object per line in experience.jsonl. Three node kinds (trajectory, principle, goal reference) and typed edges. Append-only: corrections supersede, nothing is edited in place.",
+  "oneOf": [
+    { "$ref": "#/$defs/trajectory" },
+    { "$ref": "#/$defs/principle" },
+    { "$ref": "#/$defs/edge" }
+  ],
+  "$defs": {
+    "isoDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "trajectoryId": { "type": "string", "pattern": "^t-\\d{8}-\\d+$" },
+    "principleId": { "type": "string", "pattern": "^p-[a-z0-9-]{3,60}$" },
+    "goalId": { "type": "string", "pattern": "^G\\d+$" },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["author", "status"],
+      "properties": {
+        "author": {
+          "enum": ["matt", "cupcake"],
+          "description": "Who wrote the record. Only 'matt' may set status=confirmed."
+        },
+        "status": { "enum": ["draft", "confirmed", "superseded"] },
+        "supersedes": {
+          "type": "string",
+          "description": "id of the record this one replaces"
+        }
+      }
+    },
+    "trajectory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "date", "tried", "result", "source", "provenance"],
+      "properties": {
+        "kind": { "const": "trajectory" },
+        "id": { "$ref": "#/$defs/trajectoryId" },
+        "date": { "$ref": "#/$defs/isoDate" },
+        "tried": { "type": "string", "minLength": 3, "maxLength": 280 },
+        "result": { "enum": ["worked", "failed", "mixed", "unknown"] },
+        "because": {
+          "type": "string",
+          "maxLength": 280,
+          "description": "Matt's or the evidence's explanation, not a model guess"
+        },
+        "goal": { "$ref": "#/$defs/goalId" },
+        "domain": {
+          "enum": ["health", "food", "sleep", "money", "work", "code", "people", "other"]
+        },
+        "source": {
+          "type": "string",
+          "description": "Where this came from, e.g. scorecard/2026-11-01.md#L12 or a library action name. Never raw health/finance values."
+        },
+        "provenance": { "$ref": "#/$defs/provenance" }
+      }
+    },
+    "principle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "statement", "polarity", "provenance"],
+      "properties": {
+        "kind": { "const": "principle" },
+        "id": { "$ref": "#/$defs/principleId" },
+        "statement": { "type": "string", "minLength": 5, "maxLength": 200 },
+        "polarity": {
+          "enum": ["do", "dont"],
+          "description": "'do' = repeat what worked; 'dont' = avoid what failed"
+        },
+        "scope": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "When the principle applies, e.g. 'evenings after 9 PM'"
+        },
+        "review_by": { "$ref": "#/$defs/isoDate" },
+        "provenance": { "$ref": "#/$defs/provenance" }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "from", "to", "rel", "provenance"],
+      "properties": {
+        "kind": { "const": "edge" },
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "rel": {
+          "enum": ["supports", "contradicts", "serves_goal", "refines", "same_pattern"],
+          "description": "trajectory->principle: supports|contradicts; trajectory|principle->goal: serves_goal; principle->principle: refines; trajectory->trajectory: same_pattern"
+        },
+        "provenance": { "$ref": "#/$defs/provenance" }
+      }
+    }
+  }
+}
